@@ -52,7 +52,7 @@ async fn demo_get(_request: &Request) -> Response {
 // SYNC
 #[cfg(feature = "sync")]
 fn main() {
-  let serving_url: &str = "127.0.0.1:7878";
+  let serving_url: &str = "0.0.0.0:7878";
   let threads_number: u8 = 10;
 
   let mut server = Server::new(serving_url, threads_number, None).unwrap();
@@ -65,7 +65,7 @@ fn main() {
 #[cfg(all(not(feature = "sync"), feature = "async_tokio"))]
 #[tokio::main]
 async fn main() {
-  let serving_url: &str = "127.0.0.1:7878";
+  let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url, None).await.unwrap();
   server.add_route("/", Rt::GET, handler!(demo_get));
@@ -77,7 +77,7 @@ async fn main() {
 #[cfg(all(not(feature = "sync"), not(feature = "async_tokio"), feature = "async_std"))]
 #[async_std::main]
 async fn main() {
-  let serving_url: &str = "127.0.0.1:7878";
+  let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url, None).await.unwrap();
   server.add_route("/", Rt::GET, handler!(demo_get));
@@ -103,7 +103,7 @@ fn main() {
   feature = "async_smol"
 ))]
 async fn run_smol() {
-  let serving_url: &str = "127.0.0.1:7878";
+  let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url, None).await.unwrap();
   server.add_route("/", Rt::GET, handler!(demo_get));
