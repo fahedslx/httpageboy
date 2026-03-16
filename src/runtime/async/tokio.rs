@@ -88,21 +88,14 @@ impl Server {
         let cors_policy = self.cors.clone();
 
         tokio::spawn(async move {
-          let (mut req, early) = crate::core::request::parse_stream_tokio(
-            &mut stream,
-            &routes,
-            &sources,
-          )
-          .await;
+          let (mut req, early) = crate::core::request::parse_stream_tokio(&mut stream, &routes, &sources).await;
           let origin = req.origin().map(str::to_string);
           let method = req.method.clone();
           let resp = match early {
             Some(r) => r,
             None => {
               let routed = handle_request_async(&mut req, &routes, &sources).await;
-              if routed.is_none()
-                && method == crate::core::request_type::RequestType::OPTIONS
-                && cors_policy.is_some()
+              if routed.is_none() && method == crate::core::request_type::RequestType::OPTIONS && cors_policy.is_some()
               {
                 cors_policy
                   .as_deref()

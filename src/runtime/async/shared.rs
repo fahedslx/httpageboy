@@ -1,5 +1,5 @@
-use crate::core::handler::Handler;
 use crate::core::cors::CorsPolicy;
+use crate::core::handler::Handler;
 use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
 use crate::core::response::Response;
@@ -26,13 +26,15 @@ pub async fn send_response<S: AsyncStream>(
   origin: Option<&str>,
 ) {
   let conn_hdr = if close { "Connection: close\r\n" } else { "" };
-  let mut head = format!(
-    "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n{}",
-    resp.status,
-    resp.content_type,
-    resp.content.len(),
-    conn_hdr,
-  );
+  let mut head = format!("HTTP/1.1 {}\r\n", resp.status);
+  for (k, v) in &resp.headers {
+    if k.eq_ignore_ascii_case("content-length") || k.eq_ignore_ascii_case("connection") {
+      continue;
+    }
+    head.push_str(&format!("{}: {}\r\n", k, v));
+  }
+  head.push_str(&format!("Content-Length: {}\r\n", resp.body.len()));
+  head.push_str(conn_hdr);
   if let Some(policy) = cors {
     for (k, v) in policy.header_lines(origin) {
       head.push_str(&format!("{}: {}\r\n", k, v));
@@ -40,12 +42,7 @@ pub async fn send_response<S: AsyncStream>(
   }
   head.push_str("\r\n");
   let _ = stream.write_all(head.as_bytes()).await;
-  if resp.content_type.starts_with("image/") {
-    let _ = stream.write_all(&resp.content).await;
-  } else {
-    let text = String::from_utf8_lossy(&resp.content);
-    let _ = stream.write_all(text.as_bytes()).await;
-  }
+  let _ = stream.write_all(&resp.body).await;
   let _ = stream.flush().await;
   if close {
     let _ = stream.shutdown().await;

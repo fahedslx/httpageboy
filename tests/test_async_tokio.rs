@@ -26,6 +26,9 @@ async fn common_server_definition(server_url: &str) -> Server {
   server.add_route("/test", Rt::OPTIONS, handler!(demo_handle_options));
   server.add_route("/test", Rt::CONNECT, handler!(demo_handle_connect));
   server.add_route("/test", Rt::TRACE, handler!(demo_handle_trace));
+  server.add_route("/redirect", Rt::GET, handler!(demo_handle_redirect));
+  server.add_route("/json", Rt::GET, handler!(demo_handle_json));
+  server.add_route("/custom-header", Rt::GET, handler!(demo_handle_custom_header));
   let res_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res");
   server.add_files_source(res_path.to_str().unwrap());
   server
@@ -62,8 +65,8 @@ async fn run_strict(request: &[u8], expected: &[u8]) -> String {
 async fn demo_handle_home(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: b"home".to_vec(),
+    headers: vec![],
+    body: b"home".to_vec(),
   }
 }
 
@@ -78,16 +81,16 @@ async fn demo_handle_post(_request: &Request) -> Response {
   );
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: body.into_bytes(),
+    headers: vec![],
+    body: body.into_bytes(),
   }
 }
 
 async fn demo_handle_get(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: b"get".to_vec(),
+    headers: vec![],
+    body: b"get".to_vec(),
   }
 }
 
@@ -98,48 +101,78 @@ async fn demo_handle_put(_request: &Request) -> Response {
   );
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: body.into_bytes(),
+    headers: vec![],
+    body: body.into_bytes(),
   }
 }
 
 async fn demo_handle_delete(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: b"delete".to_vec(),
+    headers: vec![],
+    body: b"delete".to_vec(),
   }
 }
 
 async fn demo_handle_head(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: b"head".to_vec(),
+    headers: vec![],
+    body: b"head".to_vec(),
   }
 }
 
 async fn demo_handle_options(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: b"options".to_vec(),
+    headers: vec![],
+    body: b"options".to_vec(),
   }
 }
 
 async fn demo_handle_connect(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: b"connect".to_vec(),
+    headers: vec![],
+    body: b"connect".to_vec(),
   }
 }
 
 async fn demo_handle_trace(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: b"trace".to_vec(),
+    headers: vec![],
+    body: b"trace".to_vec(),
+  }
+}
+
+async fn demo_handle_redirect(_request: &Request) -> Response {
+  Response {
+    status: StatusCode::TemporaryRedirect.to_string(),
+    headers: vec![
+      ("Location".to_string(), "https://example.com".to_string()),
+      ("Content-Type".to_string(), "text/plain".to_string()),
+    ],
+    body: Vec::new(),
+  }
+}
+
+async fn demo_handle_json(_request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![("Content-Type".to_string(), "application/json".to_string())],
+    body: br#"{"ok":true}"#.to_vec(),
+  }
+}
+
+async fn demo_handle_custom_header(_request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![
+      ("Content-Type".to_string(), "text/plain".to_string()),
+      ("X-Trace-Id".to_string(), "abc-123".to_string()),
+    ],
+    body: b"custom".to_vec(),
   }
 }
 
@@ -538,4 +571,52 @@ async fn test_missing_method() {
   let expected = b"HTTP/1.1 400 Bad Request";
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   run_regular(request, expected).await;
+}
+
+#[tokio::test]
+async fn test_redirect_with_location_header() {
+  boot_regular().await;
+  let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect").await;
+  assert!(
+    response.contains("Location: https://example.com"),
+    "missing Location header: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Length: 0"),
+    "wrong Content-Length for redirect: {}",
+    response
+  );
+}
+
+#[tokio::test]
+async fn test_json_content_type_header() {
+  boot_regular().await;
+  let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#).await;
+  assert!(
+    response.contains("Content-Type: application/json"),
+    "missing JSON content type: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Length: 11"),
+    "wrong Content-Length for JSON: {}",
+    response
+  );
+}
+
+#[tokio::test]
+async fn test_custom_header_is_serialized() {
+  boot_regular().await;
+  let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom").await;
+  assert!(
+    response.contains("X-Trace-Id: abc-123"),
+    "missing custom header: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Type: text/plain"),
+    "missing Content-Type: {}",
+    response
+  );
 }

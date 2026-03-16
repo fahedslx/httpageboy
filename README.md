@@ -23,8 +23,8 @@ async fn demo(_req: &()) -> Response {
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: "text/plain".into(),
-    content: b"ok".to_vec(),
+    headers: vec![("Content-Type".into(), "text/plain".into())],
+    body: b"ok".to_vec(),
   }
 }
 
@@ -35,6 +35,25 @@ async fn main() {
   srv.run().await;
 }
 ````
+
+Response now supports arbitrary headers:
+
+```rust
+Response {
+  status: StatusCode::Ok.to_string(),
+  headers: vec![("Content-Type".into(), "application/json".into())],
+  body: br#"{"ok":true}"#.to_vec(),
+}
+
+Response {
+  status: StatusCode::TemporaryRedirect.to_string(),
+  headers: vec![
+    ("Location".into(), "https://example.com".into()),
+    ("Content-Type".into(), "text/plain".into()),
+  ],
+  body: Vec::new(),
+}
+```
 
 ## Testing
 
@@ -58,8 +77,8 @@ async fn server_factory() -> Server {
 async fn home(_req: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: "text/plain".into(),
-    content: b"home".to_vec(),
+    headers: vec![("Content-Type".into(), "text/plain".into())],
+    body: b"home".to_vec(),
   }
 }
 

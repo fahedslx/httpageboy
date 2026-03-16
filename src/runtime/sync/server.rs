@@ -97,28 +97,22 @@ impl Server {
           pool.lock().unwrap().run(move || {
             let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local);
             let origin = request.origin().map(str::to_string);
-          let method = request.method.clone();
-          let answer = if let Some(resp) = early_resp {
-            Some(resp)
-          } else {
-            let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
-            if routed.is_none()
-              && method == crate::core::request_type::RequestType::OPTIONS
-              && cors_policy.is_some()
-            {
-              Some(Self::preflight_response(cors_policy.as_deref()))
+            let method = request.method.clone();
+            let answer = if let Some(resp) = early_resp {
+              Some(resp)
             } else {
-              routed
-            }
-          };
+              let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
+              if routed.is_none() && method == crate::core::request_type::RequestType::OPTIONS && cors_policy.is_some()
+              {
+                Some(Self::preflight_response(cors_policy.as_deref()))
+              } else {
+                routed
+              }
+            };
             match answer {
-              Some(response) => Self::send_response(
-                stream,
-                &response,
-                close_flag,
-                cors_policy.as_deref(),
-                origin.as_deref(),
-              ),
+              Some(response) => {
+                Self::send_response(stream, &response, close_flag, cors_policy.as_deref(), origin.as_deref())
+              }
               None => Self::send_response(
                 stream,
                 &Response::new(),
@@ -156,13 +150,15 @@ impl Server {
     origin: Option<&str>,
   ) {
     let connection_header = if close { "Connection: close\r\n" } else { "" };
-    let mut header = format!(
-      "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n{}",
-      response.status,
-      response.content_type,
-      response.content.len(),
-      connection_header
-    );
+    let mut header = format!("HTTP/1.1 {}\r\n", response.status);
+    for (k, v) in &response.headers {
+      if k.eq_ignore_ascii_case("content-length") || k.eq_ignore_ascii_case("connection") {
+        continue;
+      }
+      header.push_str(&format!("{}: {}\r\n", k, v));
+    }
+    header.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
+    header.push_str(connection_header);
     if let Some(policy) = cors {
       for (k, v) in policy.header_lines(origin) {
         header.push_str(&format!("{}: {}\r\n", k, v));
@@ -170,13 +166,7 @@ impl Server {
     }
     header.push_str("\r\n");
     let _ = stream.write_all(header.as_bytes());
-
-    if response.content_type.starts_with("image/") {
-      let _ = stream.write_all(&response.content);
-    } else {
-      let text = String::from_utf8_lossy(&response.content);
-      let _ = stream.write_all(text.as_bytes());
-    }
+    let _ = stream.write_all(&response.body);
 
     let _ = stream.flush();
     if close {

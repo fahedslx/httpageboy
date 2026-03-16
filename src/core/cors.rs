@@ -35,9 +35,7 @@ impl CorsPolicy {
         "origin" | "allow_origin" => policy.allow_origin = value.to_string(),
         "methods" | "allow_methods" => policy.allow_methods = value.to_string(),
         "headers" | "allow_headers" => policy.allow_headers = value.to_string(),
-        "credentials" | "allow_credentials" => {
-          policy.allow_credentials = value.eq_ignore_ascii_case("true")
-        }
+        "credentials" | "allow_credentials" => policy.allow_credentials = value.eq_ignore_ascii_case("true"),
         "max_age" | "max_age_seconds" => {
           policy.max_age_seconds = value.parse::<u32>().ok();
         }
@@ -52,11 +50,7 @@ impl CorsPolicy {
       return Some("*".to_string());
     }
     let req_origin = request_origin?;
-    let mut allowed = self
-      .allow_origin
-      .split(',')
-      .map(|s| s.trim())
-      .filter(|s| !s.is_empty());
+    let mut allowed = self.allow_origin.split(',').map(|s| s.trim()).filter(|s| !s.is_empty());
     allowed
       .find(|o| o.eq_ignore_ascii_case(req_origin))
       .map(|_| req_origin.to_string())
@@ -66,26 +60,14 @@ impl CorsPolicy {
     let mut headers = Vec::new();
     if let Some(origin) = self.allowed_origin(request_origin) {
       headers.push(("Access-Control-Allow-Origin".to_string(), origin));
-      headers.push((
-        "Access-Control-Allow-Methods".to_string(),
-        self.allow_methods.clone(),
-      ));
-      headers.push((
-        "Access-Control-Allow-Headers".to_string(),
-        self.allow_headers.clone(),
-      ));
+      headers.push(("Access-Control-Allow-Methods".to_string(), self.allow_methods.clone()));
+      headers.push(("Access-Control-Allow-Headers".to_string(), self.allow_headers.clone()));
     }
     if self.allow_credentials {
-      headers.push((
-        "Access-Control-Allow-Credentials".to_string(),
-        "true".to_string(),
-      ));
+      headers.push(("Access-Control-Allow-Credentials".to_string(), "true".to_string()));
     }
     if let Some(max_age) = self.max_age_seconds {
-      headers.push((
-        "Access-Control-Max-Age".to_string(),
-        max_age.to_string(),
-      ));
+      headers.push(("Access-Control-Max-Age".to_string(), max_age.to_string()));
     }
     headers
   }
@@ -93,8 +75,8 @@ impl CorsPolicy {
   pub fn preflight_response(&self) -> Response {
     Response {
       status: StatusCode::NoContent.to_string(),
-      content_type: "text/plain".to_string(),
-      content: Vec::new(),
+      headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
+      body: Vec::new(),
     }
   }
 }

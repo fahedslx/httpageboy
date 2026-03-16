@@ -1,13 +1,7 @@
 pub mod core;
 
 // Common re-exports (always available)
-pub use crate::core::{
-  cors::CorsPolicy,
-  request_type::Rt,
-  response::Response,
-  status_code::StatusCode,
-  test_utils,
-};
+pub use crate::core::{cors::CorsPolicy, request_type::Rt, response::Response, status_code::StatusCode, test_utils};
 
 // Feature-gated re-exports (exist only when any handler feature is enabled)
 #[cfg(any(

@@ -1,3 +1,4 @@
+pub mod cors;
 pub mod handler;
 pub mod request;
 pub mod request_handler;
@@ -6,4 +7,3 @@ pub mod response;
 pub mod status_code;
 pub mod test_utils;
 pub mod utils;
-pub mod cors;

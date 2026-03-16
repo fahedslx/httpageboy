@@ -18,8 +18,8 @@ use httpageboy::{Request, Response, Rt, Server, StatusCode, handler};
 fn demo_get(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "<!DOCTYPE html><html><head>\
+    headers: vec![],
+    body: "<!DOCTYPE html><html><head>\
 <meta charset=\"utf-8\">\
 </head><body>🤓: Hi, this is Pageboy working.
 <br>Do you like the <a href=\"/HTTPageboy.svg\">new icon</a>?</body></html>"
@@ -39,8 +39,8 @@ async fn demo_get(_request: &Request) -> Response {
 
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "<!DOCTYPE html><html><head>\
+    headers: vec![],
+    body: "<!DOCTYPE html><html><head>\
 <meta charset=\"utf-8\">\
 </head><body>🤓: Hi, this is Pageboy working.
 <br>Do you like the <a href=\"/HTTPageboy.svg\">new icon</a>?</body></html>"

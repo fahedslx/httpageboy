@@ -467,8 +467,8 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::BadRequest.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -478,22 +478,24 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::BadRequest.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
     let method_str = parts[0];
     let path_str = parts[1];
     let version = parts[2];
-    let allowed = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "CONNECT", "TRACE"];
+    let allowed = [
+      "GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "CONNECT", "TRACE",
+    ];
     if !allowed.contains(&method_str) {
       return (
         Self::default(),
         Some(Response {
           status: StatusCode::MethodNotAllowed.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -502,8 +504,8 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::HttpVersionNotSupported.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -513,8 +515,8 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::UriTooLong.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -534,8 +536,8 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::BadRequest.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -545,22 +547,24 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::BadRequest.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
     let method_str = parts[0];
     let path_str = parts[1];
     let version = parts[2];
-    let allowed = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "CONNECT", "TRACE"];
+    let allowed = [
+      "GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "CONNECT", "TRACE",
+    ];
     if !allowed.contains(&method_str) {
       return (
         Self::default(),
         Some(Response {
           status: StatusCode::MethodNotAllowed.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -569,8 +573,8 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::HttpVersionNotSupported.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -580,8 +584,8 @@ impl Request {
         Self::default(),
         Some(Response {
           status: StatusCode::UriTooLong.to_string(),
-          content_type: String::new(),
-          content: Vec::new(),
+          headers: vec![],
+          body: Vec::new(),
         }),
       );
     }
@@ -704,8 +708,11 @@ impl Request {
         if let Ok(data) = std::fs::read(&real_path) {
           return Response {
             status: StatusCode::Ok.to_string(),
-            content_type: crate::core::utils::get_content_type_quick(&real_path),
-            content: data,
+            headers: vec![(
+              "Content-Type".to_string(),
+              crate::core::utils::get_content_type_quick(&real_path),
+            )],
+            body: data,
           };
         }
       }

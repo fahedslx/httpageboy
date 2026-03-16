@@ -23,6 +23,9 @@ fn common_server_definition(server_url: &str) -> Server {
   server.add_route("/test", Rt::OPTIONS, handler!(demo_handle_options));
   server.add_route("/test", Rt::CONNECT, handler!(demo_handle_connect));
   server.add_route("/test", Rt::TRACE, handler!(demo_handle_trace));
+  server.add_route("/redirect", Rt::GET, handler!(demo_handle_redirect));
+  server.add_route("/json", Rt::GET, handler!(demo_handle_json));
+  server.add_route("/custom-header", Rt::GET, handler!(demo_handle_custom_header));
   let res_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res");
   server.add_files_source(res_path.to_str().unwrap());
   server
@@ -55,8 +58,8 @@ fn run_strict(request: &[u8], expected: &[u8]) -> String {
 fn demo_handle_home(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "home".as_bytes().to_vec(),
+    headers: vec![],
+    body: "home".as_bytes().to_vec(),
   }
 }
 
@@ -74,16 +77,16 @@ fn demo_handle_post(_request: &Request) -> Response {
 
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: request_string.as_bytes().to_vec(),
+    headers: vec![],
+    body: request_string.as_bytes().to_vec(),
   }
 }
 
 fn demo_handle_get(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "get".as_bytes().to_vec(),
+    headers: vec![],
+    body: "get".as_bytes().to_vec(),
   }
 }
 
@@ -94,48 +97,78 @@ fn demo_handle_put(_request: &Request) -> Response {
   );
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: request_string.as_bytes().to_vec(),
+    headers: vec![],
+    body: request_string.as_bytes().to_vec(),
   }
 }
 
 fn demo_handle_delete(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "delete".as_bytes().to_vec(),
+    headers: vec![],
+    body: "delete".as_bytes().to_vec(),
   }
 }
 
 fn demo_handle_head(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "head".as_bytes().to_vec(),
+    headers: vec![],
+    body: "head".as_bytes().to_vec(),
   }
 }
 
 fn demo_handle_options(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "options".as_bytes().to_vec(),
+    headers: vec![],
+    body: "options".as_bytes().to_vec(),
   }
 }
 
 fn demo_handle_connect(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "connect".as_bytes().to_vec(),
+    headers: vec![],
+    body: "connect".as_bytes().to_vec(),
   }
 }
 
 fn demo_handle_trace(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
-    content_type: String::new(),
-    content: "trace".as_bytes().to_vec(),
+    headers: vec![],
+    body: "trace".as_bytes().to_vec(),
+  }
+}
+
+fn demo_handle_redirect(_request: &Request) -> Response {
+  Response {
+    status: StatusCode::TemporaryRedirect.to_string(),
+    headers: vec![
+      ("Location".to_string(), "https://example.com".to_string()),
+      ("Content-Type".to_string(), "text/plain".to_string()),
+    ],
+    body: Vec::new(),
+  }
+}
+
+fn demo_handle_json(_request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![("Content-Type".to_string(), "application/json".to_string())],
+    body: br#"{"ok":true}"#.to_vec(),
+  }
+}
+
+fn demo_handle_custom_header(_request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![
+      ("Content-Type".to_string(), "text/plain".to_string()),
+      ("X-Trace-Id".to_string(), "abc-123".to_string()),
+    ],
+    body: b"custom".to_vec(),
   }
 }
 
@@ -518,4 +551,52 @@ fn test_missing_method() {
   let request = b"/ HTTP/1.1\r\n\r\n";
   let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
+}
+
+#[test]
+fn test_redirect_with_location_header() {
+  boot_regular();
+  let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect");
+  assert!(
+    response.contains("Location: https://example.com"),
+    "missing Location header: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Length: 0"),
+    "wrong Content-Length for redirect: {}",
+    response
+  );
+}
+
+#[test]
+fn test_json_content_type_header() {
+  boot_regular();
+  let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#);
+  assert!(
+    response.contains("Content-Type: application/json"),
+    "missing JSON content type: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Length: 11"),
+    "wrong Content-Length for JSON: {}",
+    response
+  );
+}
+
+#[test]
+fn test_custom_header_is_serialized() {
+  boot_regular();
+  let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom");
+  assert!(
+    response.contains("X-Trace-Id: abc-123"),
+    "missing custom header: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Type: text/plain"),
+    "missing Content-Type: {}",
+    response
+  );
 }
