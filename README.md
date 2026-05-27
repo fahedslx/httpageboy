@@ -103,6 +103,16 @@ server.set_cors_str("origin=http://localhost:3000,credentials=true,headers=Conte
 
 Preflights (OPTIONS) are answered automatically using the active policy.
 
+## OpenAPI helper
+
+`tools/openapi_from_routes.py` generates a minimal OpenAPI file from a small `docs/routes.yaml` contract. It is intentionally dependency-free and stays as an internal helper until the format is stable.
+
+```bash
+python3 tools/openapi_from_routes.py docs/routes.yaml docs/openapi.yaml
+```
+
+Each API owns its `docs/routes.yaml`; the generated `docs/openapi.yaml` should not be edited manually.
+
 Comandos:
 
 ```bash

@@ -6,3 +6,5 @@ Cargo.lock
 *.code-workspace
 log
 AGENTS*
+__pycache__/
+*.pyc
