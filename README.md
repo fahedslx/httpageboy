@@ -105,10 +105,10 @@ Preflights (OPTIONS) are answered automatically using the active policy.
 
 ## OpenAPI helper
 
-`tools/openapi_from_routes.py` generates a minimal OpenAPI file from a small `docs/routes.yaml` contract. It is intentionally dependency-free and stays as an internal helper until the format is stable.
+`openapi_from_routes` generates a minimal OpenAPI file from a small `docs/routes.yaml` contract. It is written in Rust, dependency-free, and stays as an internal helper until the format is stable.
 
 ```bash
-python3 tools/openapi_from_routes.py docs/routes.yaml docs/openapi.yaml
+cargo run --bin openapi_from_routes -- docs/routes.yaml docs/openapi.yaml
 ```
 
 Each API owns its `docs/routes.yaml`; the generated `docs/openapi.yaml` should not be edited manually.
@@ -120,6 +120,7 @@ cargo test --features sync --test test_sync
 cargo test --features async_tokio --test test_async_tokio
 cargo test --features async_std --test test_async_std
 cargo test --features async_smol --test test_async_smol
+cargo test --bin openapi_from_routes
 ```
 
 ## Examples
