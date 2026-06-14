@@ -12,6 +12,7 @@ httpageboy is a lightweight HTTP parser/server (sync and async) used as the base
 - Keep route handlers small and grouped by resource.
 - Use imperative commit prefixes: `feat:`, `fix:`, `refactor:`, `docs:`. May there be more than one in a single commit.
 - Commit messages must include a prefix (feat/fix/refactor/docs) plus minimal bullet-like summaries of the main changes on subsequent lines. bullets must be plus signs "+ ".
+- After every commit, push the branch to the configured remote.
 - Avoid adding dependencies when possible.
 - Apply KISS practices.
 
