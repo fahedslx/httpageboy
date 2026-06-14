@@ -3,6 +3,7 @@ use crate::core::handler::Handler;
 use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
 use crate::core::response::Response;
+use crate::runtime::shared as runtime_shared;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::io::Result;
@@ -25,22 +26,7 @@ pub async fn send_response<S: AsyncStream>(
   cors: Option<&CorsPolicy>,
   origin: Option<&str>,
 ) {
-  let conn_hdr = if close { "Connection: close\r\n" } else { "" };
-  let mut head = format!("HTTP/1.1 {}\r\n", resp.status);
-  for (k, v) in &resp.headers {
-    if k.eq_ignore_ascii_case("content-length") || k.eq_ignore_ascii_case("connection") {
-      continue;
-    }
-    head.push_str(&format!("{}: {}\r\n", k, v));
-  }
-  head.push_str(&format!("Content-Length: {}\r\n", resp.body.len()));
-  head.push_str(conn_hdr);
-  if let Some(policy) = cors {
-    for (k, v) in policy.header_lines(origin) {
-      head.push_str(&format!("{}: {}\r\n", k, v));
-    }
-  }
-  head.push_str("\r\n");
+  let head = runtime_shared::response_head(resp, close, cors, origin);
   let _ = stream.write_all(head.as_bytes()).await;
   let _ = stream.write_all(&resp.body).await;
   let _ = stream.flush().await;
@@ -82,6 +68,8 @@ impl<L> GenericServer<L> {
   where
     S: Into<String>,
   {
-    Arc::get_mut(&mut self.files_sources).unwrap().push(base.into());
+    Arc::get_mut(&mut self.files_sources)
+      .unwrap()
+      .push(runtime_shared::file_source_path(base));
   }
 }

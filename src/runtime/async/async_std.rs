@@ -1,9 +1,8 @@
 use crate::core::cors::CorsPolicy;
 use crate::core::request::handle_request_async;
 use crate::core::request_handler::Rh;
-use crate::core::response::Response;
 use crate::runtime::r#async::shared;
-use crate::runtime::shared::print_server_info;
+use crate::runtime::shared::{print_server_info, response_or_default};
 use async_std::io::prelude::*;
 use async_std::net::{Shutdown, TcpListener, TcpStream};
 use async_std::task::spawn;
@@ -95,14 +94,7 @@ impl Server {
           Some(r) => r,
           None => {
             let routed = handle_request_async(&mut req, &routes, &files).await;
-            if routed.is_none() && method == crate::core::request_type::RequestType::OPTIONS && cors_policy.is_some() {
-              cors_policy
-                .as_deref()
-                .map(|policy| policy.preflight_response())
-                .unwrap_or_else(Response::new)
-            } else {
-              routed.unwrap_or_else(Response::new)
-            }
+            response_or_default(routed, &method, cors_policy.as_deref())
           }
         };
         shared::send_response(

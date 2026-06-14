@@ -6,12 +6,11 @@ use crate::core::request::{Request, handle_request_sync};
 use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
 use crate::core::response::Response;
-use crate::runtime::shared::print_server_info;
+use crate::runtime::shared::{file_source_path, print_server_info, response_head, response_or_default};
 use crate::runtime::sync::threadpool::ThreadPool;
 use std::collections::HashMap;
 use std::io::prelude::Write;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -76,12 +75,7 @@ impl Server {
   where
     S: Into<String>,
   {
-    let s = base.into();
-    let canonical = PathBuf::from(&s)
-      .canonicalize()
-      .map(|p| p.to_string_lossy().to_string())
-      .unwrap_or(s.clone());
-    self.files_sources.push(canonical);
+    self.files_sources.push(file_source_path(base));
   }
 
   pub fn run(&self) {
@@ -98,29 +92,13 @@ impl Server {
             let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local);
             let origin = request.origin().map(str::to_string);
             let method = request.method.clone();
-            let answer = if let Some(resp) = early_resp {
-              Some(resp)
+            let response = if let Some(resp) = early_resp {
+              resp
             } else {
               let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
-              if routed.is_none() && method == crate::core::request_type::RequestType::OPTIONS && cors_policy.is_some()
-              {
-                Some(Self::preflight_response(cors_policy.as_deref()))
-              } else {
-                routed
-              }
+              response_or_default(routed, &method, cors_policy.as_deref())
             };
-            match answer {
-              Some(response) => {
-                Self::send_response(stream, &response, close_flag, cors_policy.as_deref(), origin.as_deref())
-              }
-              None => Self::send_response(
-                stream,
-                &Response::new(),
-                close_flag,
-                cors_policy.as_deref(),
-                origin.as_deref(),
-              ),
-            }
+            Self::send_response(stream, &response, close_flag, cors_policy.as_deref(), origin.as_deref())
           });
         }
         Err(_err) => {
@@ -135,13 +113,6 @@ impl Server {
     pool.stop();
   }
 
-  fn preflight_response(cors: Option<&CorsPolicy>) -> Response {
-    if let Some(policy) = cors {
-      return policy.preflight_response();
-    }
-    Response::new()
-  }
-
   fn send_response(
     mut stream: TcpStream,
     response: &Response,
@@ -149,22 +120,7 @@ impl Server {
     cors: Option<&CorsPolicy>,
     origin: Option<&str>,
   ) {
-    let connection_header = if close { "Connection: close\r\n" } else { "" };
-    let mut header = format!("HTTP/1.1 {}\r\n", response.status);
-    for (k, v) in &response.headers {
-      if k.eq_ignore_ascii_case("content-length") || k.eq_ignore_ascii_case("connection") {
-        continue;
-      }
-      header.push_str(&format!("{}: {}\r\n", k, v));
-    }
-    header.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
-    header.push_str(connection_header);
-    if let Some(policy) = cors {
-      for (k, v) in policy.header_lines(origin) {
-        header.push_str(&format!("{}: {}\r\n", k, v));
-      }
-    }
-    header.push_str("\r\n");
+    let header = response_head(response, close, cors, origin);
     let _ = stream.write_all(header.as_bytes());
     let _ = stream.write_all(&response.body);
 
