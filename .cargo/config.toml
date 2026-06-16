@@ -1,0 +1,2 @@
+[alias]
+openapi = "run --bin openapi_from_routes -- docs/routes.yaml docs/openapi.yaml"

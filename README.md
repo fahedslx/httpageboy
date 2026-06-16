@@ -108,10 +108,16 @@ Preflights (OPTIONS) are answered automatically using the active policy.
 `openapi_from_routes` generates a minimal OpenAPI file from a small `docs/routes.yaml` contract. It is written in Rust, dependency-free, and stays as an internal helper until the format is stable.
 
 ```bash
-cargo run --bin openapi_from_routes -- docs/routes.yaml docs/openapi.yaml
+cargo openapi
 ```
 
 Each API owns its `docs/routes.yaml`; the generated `docs/openapi.yaml` should not be edited manually.
+
+For custom paths:
+
+```bash
+cargo run --bin openapi_from_routes -- path/to/routes.yaml path/to/openapi.yaml
+```
 
 Comandos:
 
