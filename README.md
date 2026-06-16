@@ -105,19 +105,58 @@ Preflights (OPTIONS) are answered automatically using the active policy.
 
 ## OpenAPI helper
 
-`openapi_from_routes` generates a minimal OpenAPI file from a small `docs/routes.yaml` contract. It is written in Rust, dependency-free, and stays as an internal helper until the format is stable.
+`cargo openapi` generates OpenAPI directly from implemented `server.add_route(...)` calls and the `// openapi:` comments placed immediately above each route. It is dependency-free and works offline.
+
+```rust
+// openapi: List users in the business
+// auth: user-token, business-id, app-id
+// permission: users.read
+// response: 200 User list
+server.add_route("/businesses/{id}/users", Rt::GET, handler!(list_business_users));
+```
+
+Default project flow:
 
 ```bash
 cargo openapi
 ```
 
-Each API owns its `docs/routes.yaml`; the generated `docs/openapi.yaml` should not be edited manually.
+That reads `src/` and writes both:
+
+```txt
+docs/openapi.yaml
+public/openapi.yaml
+```
 
 For custom paths:
 
 ```bash
-cargo run --bin openapi_from_routes -- path/to/routes.yaml path/to/openapi.yaml
+cargo run --bin openapi_from_code -- src docs/openapi.yaml public/openapi.yaml
 ```
+
+Supported route comments:
+
+```txt
+openapi: human summary
+auth: user-token, business-id, app-id
+headers: service-token
+permission: users.read
+request: json
+response: 200 OK
+errors: invalid_token, insufficient_permissions
+```
+
+Notes for API authors:
+
+- Put comments immediately above the `server.add_route(...)` call they describe.
+- Use `openapi:` for the human description; without it, the handler name is used.
+- Use `auth:` or `headers:` for required headers; omit it for public routes.
+- Use `permission:` when the route requires an authorization permission.
+- Use `request:` when the route expects a JSON body.
+- Use `response:` for the main success response.
+- Use `errors:` for known business error names.
+
+The generator extracts only routes registered in code. Missing or incomplete comments are not blockers: generation continues with the route method, path, handler name, path parameters, and any comments that are present.
 
 Comandos:
 
@@ -126,7 +165,7 @@ cargo test --features sync --test test_sync
 cargo test --features async_tokio --test test_async_tokio
 cargo test --features async_std --test test_async_std
 cargo test --features async_smol --test test_async_smol
-cargo test --bin openapi_from_routes
+cargo test --bin openapi_from_code
 ```
 
 ## Examples

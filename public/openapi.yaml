@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: "httpageboy"
+  version: "1.0.21"
+servers:
+  - url: "http://127.0.0.1"
+paths:
+  ) { return None; }  let path = extract_route_path(statement)?; let method = extract_between(statement, :
+    ":
+      summary: ""
+      operationId: ""
+      parameters:
+        - name: " return None; "
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
+  /:
+    get:
+      summary: "Demo Get"
+      operationId: "demo_get"
+      parameters: []
+      responses:
+        "200":
+          description: "OK"
+    get:
+      summary: "Demo Get"
+      operationId: "demo_get"
+      parameters: []
+      responses:
+        "200":
+          description: "OK"
+    get:
+      summary: "Demo Get"
+      operationId: "demo_get"
+      parameters: []
+      responses:
+        "200":
+          description: "OK"
+    get:
+      summary: "Demo Get"
+      operationId: "demo_get"
+      parameters: []
+      responses:
+        "200":
+          description: "OK"
+  /users/{id}:
+    get:
+      summary: "Get User"
+      operationId: "get_user"
+      parameters:
+        - name: "id"
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "OK"
