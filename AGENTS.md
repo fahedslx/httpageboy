@@ -2,7 +2,7 @@
 # httpageboy
 
 ## Tasks for agents
-- PRIORITY: extend `test_utils` with test lifecycle hooks while preserving the current shared test-server model. Add setup/cleanup around each test (`beforeEach`/`afterEach` equivalent) and server teardown support. Implement this before other pending changes.
+- No tasks pending.
 
 ## Rol
 httpageboy is a lightweight HTTP parser/server (sync and async) used as the base for APIs.
