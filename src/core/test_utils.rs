@@ -7,20 +7,8 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
 use std::pin::Pin;
-#[cfg(any(
-  feature = "sync",
-  feature = "async_tokio",
-  feature = "async_std",
-  feature = "async_smol"
-))]
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
-#[cfg(any(
-  feature = "sync",
-  feature = "async_tokio",
-  feature = "async_std",
-  feature = "async_smol"
-))]
 use std::thread;
 use std::time::Duration;
 
@@ -103,79 +91,288 @@ impl From<String> for TestError {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SuiteEvent {
-  Before,
-  BeforeEach { test: String },
-  Test { test: String },
-  AfterEach { test: String },
-  After,
-  ServerStart,
-  ServerShutdown,
+#[cfg(feature = "sync")]
+pub struct TestContext<BeforeEach, AfterEach> {
+  before_each: BeforeEach,
+  after_each: AfterEach,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SuiteStepResult {
-  pub event: SuiteEvent,
-  pub result: TestResult,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SuiteResult {
-  pub server_url: Option<&'static str>,
-  pub steps: Vec<SuiteStepResult>,
-}
-
-impl SuiteResult {
-  pub fn has_failures(&self) -> bool {
-    self.steps.iter().any(|step| step.result.is_err())
-  }
-
-  pub fn failures(&self) -> Vec<&SuiteStepResult> {
-    self.steps.iter().filter(|step| step.result.is_err()).collect()
+#[cfg(feature = "sync")]
+impl<BeforeEach, AfterEach> TestContext<BeforeEach, AfterEach>
+where
+  BeforeEach: FnMut() -> TestResult,
+  AfterEach: FnMut() -> TestResult,
+{
+  pub fn run(&mut self, request: &[u8], expected_response: &[u8]) -> TestResult<String> {
+    let result = (self.before_each)().and_then(|_| run_test(request, expected_response, None));
+    let cleanup = (self.after_each)();
+    match (result, cleanup) {
+      (Ok(response), Ok(())) => Ok(response),
+      (Err(err), _) => Err(err),
+      (Ok(_), Err(err)) => Err(err),
+    }
   }
 }
 
 #[cfg(feature = "sync")]
-pub struct NamedTest<'a> {
-  pub name: &'a str,
-  pub test: Box<dyn FnMut() -> TestResult + 'a>,
+pub fn run_test_case<Before, BeforeEach, Test, AfterEach, After>(
+  before: Before,
+  before_each: BeforeEach,
+  test: Test,
+  after_each: AfterEach,
+  after: After,
+) -> TestResult
+where
+  Before: FnOnce() -> TestResult,
+  BeforeEach: FnMut() -> TestResult,
+  Test: FnOnce(&mut TestContext<BeforeEach, AfterEach>) -> TestResult,
+  AfterEach: FnMut() -> TestResult,
+  After: FnOnce() -> TestResult,
+{
+  let mut result = before();
+  if result.is_ok() {
+    let mut context = TestContext {
+      before_each,
+      after_each,
+    };
+    result = test(&mut context);
+  }
+  let cleanup = after();
+  match (result, cleanup) {
+    (Ok(()), Ok(())) => Ok(()),
+    (Err(err), _) => Err(err),
+    (Ok(()), Err(err)) => Err(err),
+  }
+}
+
+#[cfg(all(
+  not(feature = "sync"),
+  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
+))]
+pub type TestFuture<'a, T = ()> = Pin<Box<dyn std::future::Future<Output = TestResult<T>> + 'a>>;
+
+#[cfg(all(
+  not(feature = "sync"),
+  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
+))]
+#[async_trait::async_trait(?Send)]
+pub trait AsyncTestHook {
+  async fn call(&mut self) -> TestResult;
+}
+
+#[cfg(all(
+  not(feature = "sync"),
+  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
+))]
+#[async_trait::async_trait(?Send)]
+impl<F, Fut> AsyncTestHook for F
+where
+  F: FnMut() -> Fut,
+  Fut: std::future::Future<Output = TestResult>,
+{
+  async fn call(&mut self) -> TestResult {
+    self().await
+  }
+}
+
+#[cfg(all(
+  not(feature = "sync"),
+  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
+))]
+pub struct TestContext<BeforeEach, AfterEach> {
+  before_each: BeforeEach,
+  after_each: AfterEach,
+}
+
+#[cfg(all(
+  not(feature = "sync"),
+  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
+))]
+impl<BeforeEach, AfterEach> TestContext<BeforeEach, AfterEach>
+where
+  BeforeEach: AsyncTestHook,
+  AfterEach: AsyncTestHook,
+{
+  pub async fn run(&mut self, request: &[u8], expected_response: &[u8]) -> TestResult<String> {
+    let result = match self.before_each.call().await {
+      Ok(()) => run_test(request, expected_response, None).await,
+      Err(err) => Err(err),
+    };
+    let cleanup = self.after_each.call().await;
+    match (result, cleanup) {
+      (Ok(response), Ok(())) => Ok(response),
+      (Err(err), _) => Err(err),
+      (Ok(_), Err(err)) => Err(err),
+    }
+  }
+}
+
+#[cfg(all(
+  not(feature = "sync"),
+  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
+))]
+pub async fn run_test_case<Before, BeforeFut, BeforeEach, Test, AfterEach, After, AfterFut>(
+  before: Before,
+  before_each: BeforeEach,
+  test: Test,
+  after_each: AfterEach,
+  after: After,
+) -> TestResult
+where
+  Before: FnOnce() -> BeforeFut,
+  BeforeFut: std::future::Future<Output = TestResult>,
+  BeforeEach: AsyncTestHook,
+  Test: for<'a> FnOnce(&'a mut TestContext<BeforeEach, AfterEach>) -> TestFuture<'a>,
+  AfterEach: AsyncTestHook,
+  After: FnOnce() -> AfterFut,
+  AfterFut: std::future::Future<Output = TestResult>,
+{
+  let mut result = before().await;
+  if result.is_ok() {
+    let mut context = TestContext {
+      before_each,
+      after_each,
+    };
+    result = test(&mut context).await;
+  }
+  let cleanup = after().await;
+  match (result, cleanup) {
+    (Ok(()), Ok(())) => Ok(()),
+    (Err(err), _) => Err(err),
+    (Ok(()), Err(err)) => Err(err),
+  }
 }
 
 #[cfg(feature = "sync")]
-pub struct TestSuite<'a> {
-  pub before: Option<Box<dyn FnMut() -> TestResult + 'a>>,
-  pub before_each: Option<Box<dyn FnMut() -> TestResult + 'a>>,
-  pub tests: Vec<NamedTest<'a>>,
-  pub after_each: Option<Box<dyn FnMut() -> TestResult + 'a>>,
-  pub after: Option<Box<dyn FnMut() -> TestResult + 'a>>,
+#[macro_export]
+macro_rules! test_case {
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_utils::run_test_case(
+      || -> $crate::test_utils::TestResult { $before Ok(()) },
+      || -> $crate::test_utils::TestResult { $before_each Ok(()) },
+      |__httpageboy_ctx| -> $crate::test_utils::TestResult {
+        let $ctx = __httpageboy_ctx;
+        $test
+        Ok(())
+      },
+      || -> $crate::test_utils::TestResult { $after_each Ok(()) },
+      || -> $crate::test_utils::TestResult { $after Ok(()) },
+    )
+  };
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each $after_each after {} }
+  };
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each {} after $after }
+  };
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each {} after {} }
+  };
+  (before $before:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each $after_each after $after }
+  };
+  (before $before:block test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each $after_each after {} }
+  };
+  (before $before:block test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each {} after $after }
+  };
+  (before $before:block test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each {} after {} }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each $after_each after $after }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each $after_each after {} }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each {} after $after }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each {} after {} }
+  };
+  (test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each $after_each after $after }
+  };
+  (test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each $after_each after {} }
+  };
+  (test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each {} after $after }
+  };
+  (test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each {} after {} }
+  };
 }
 
 #[cfg(all(
   not(feature = "sync"),
   any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
 ))]
-pub type BoxTestFuture<'a> = Pin<Box<dyn std::future::Future<Output = TestResult> + Send + 'a>>;
-
-#[cfg(all(
-  not(feature = "sync"),
-  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
-))]
-pub struct NamedTest<'a> {
-  pub name: &'a str,
-  pub test: Box<dyn FnMut() -> BoxTestFuture<'a> + Send + 'a>,
-}
-
-#[cfg(all(
-  not(feature = "sync"),
-  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
-))]
-pub struct TestSuite<'a> {
-  pub before: Option<Box<dyn FnMut() -> BoxTestFuture<'a> + Send + 'a>>,
-  pub before_each: Option<Box<dyn FnMut() -> BoxTestFuture<'a> + Send + 'a>>,
-  pub tests: Vec<NamedTest<'a>>,
-  pub after_each: Option<Box<dyn FnMut() -> BoxTestFuture<'a> + Send + 'a>>,
-  pub after: Option<Box<dyn FnMut() -> BoxTestFuture<'a> + Send + 'a>>,
+#[macro_export]
+macro_rules! test_case {
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_utils::run_test_case(
+      || async { $before Ok(()) },
+      || async { $before_each Ok(()) },
+      |__httpageboy_ctx| -> $crate::test_utils::TestFuture<'_> {
+        Box::pin(async {
+          let $ctx = __httpageboy_ctx;
+          $test
+          Ok(())
+        })
+      },
+      || async { $after_each Ok(()) },
+      || async { $after Ok(()) },
+    )
+    .await
+  };
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each $after_each after {} }
+  };
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each {} after $after }
+  };
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each {} after {} }
+  };
+  (before $before:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each $after_each after $after }
+  };
+  (before $before:block test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each $after_each after {} }
+  };
+  (before $before:block test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each {} after $after }
+  };
+  (before $before:block test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before $before before_each {} test |$ctx| $test after_each {} after {} }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each $after_each after $after }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each $after_each after {} }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each {} after $after }
+  };
+  (before_each $before_each:block test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before {} before_each $before_each test |$ctx| $test after_each {} after {} }
+  };
+  (test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each $after_each after $after }
+  };
+  (test |$ctx:ident| $test:block after_each $after_each:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each $after_each after {} }
+  };
+  (test |$ctx:ident| $test:block after $after:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each {} after $after }
+  };
+  (test |$ctx:ident| $test:block) => {
+    $crate::test_case! { before {} before_each {} test |$ctx| $test after_each {} after {} }
+  };
 }
 
 #[derive(Debug)]
@@ -346,75 +543,6 @@ pub fn run_test(request: &[u8], expected_response: &[u8], target_url: Option<&st
   perform_test(&url, request, expected_response)
 }
 
-#[cfg(feature = "sync")]
-pub fn run_test_suite<F>(server_url: Option<&str>, server_factory: F, mut suite: TestSuite<'_>) -> SuiteResult
-where
-  F: FnOnce() -> Server + Send + 'static,
-{
-  let requested_url = server_url.unwrap_or(DEFAULT_TEST_SERVER_URL).to_string();
-  let mut result = SuiteResult {
-    server_url: None,
-    steps: Vec::new(),
-  };
-
-  match setup_test_server(Some(&requested_url), server_factory) {
-    Ok(url) => {
-      result.server_url = Some(url);
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Ok(()),
-      });
-    }
-    Err(err) => {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Err(err),
-      });
-      return result;
-    }
-  }
-
-  if let Some(before) = suite.before.as_mut() {
-    result.steps.push(SuiteStepResult {
-      event: SuiteEvent::Before,
-      result: before(),
-    });
-  }
-
-  for named in &mut suite.tests {
-    let name = named.name.to_string();
-    if let Some(before_each) = suite.before_each.as_mut() {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::BeforeEach { test: name.clone() },
-        result: before_each(),
-      });
-    }
-    result.steps.push(SuiteStepResult {
-      event: SuiteEvent::Test { test: name.clone() },
-      result: (named.test)(),
-    });
-    if let Some(after_each) = suite.after_each.as_mut() {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::AfterEach { test: name },
-        result: after_each(),
-      });
-    }
-  }
-
-  if let Some(after) = suite.after.as_mut() {
-    result.steps.push(SuiteStepResult {
-      event: SuiteEvent::After,
-      result: after(),
-    });
-  }
-
-  result.steps.push(SuiteStepResult {
-    event: SuiteEvent::ServerShutdown,
-    result: shutdown_test_server(&requested_url),
-  });
-  result
-}
-
 #[cfg(all(feature = "async_tokio", not(feature = "sync")))]
 pub async fn setup_test_server<F, Fut>(server_url: Option<&str>, server_factory: F) -> TestResult<&'static str>
 where
@@ -498,47 +626,6 @@ pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Opti
   compare_response(buffer, expected_response)
 }
 
-#[cfg(all(feature = "async_tokio", not(feature = "sync")))]
-pub async fn run_test_suite<F, Fut>(
-  server_url: Option<&str>,
-  server_factory: F,
-  mut suite: TestSuite<'_>,
-) -> SuiteResult
-where
-  F: FnOnce() -> Fut + Send + 'static,
-  Fut: std::future::Future<Output = Server> + Send + 'static,
-{
-  let requested_url = server_url.unwrap_or(DEFAULT_TEST_SERVER_URL).to_string();
-  let mut result = SuiteResult {
-    server_url: None,
-    steps: Vec::new(),
-  };
-
-  match setup_test_server(Some(&requested_url), server_factory).await {
-    Ok(url) => {
-      result.server_url = Some(url);
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Ok(()),
-      });
-    }
-    Err(err) => {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Err(err),
-      });
-      return result;
-    }
-  }
-
-  run_async_suite_steps(&mut suite, &mut result).await;
-  result.steps.push(SuiteStepResult {
-    event: SuiteEvent::ServerShutdown,
-    result: shutdown_test_server(&requested_url),
-  });
-  result
-}
-
 #[cfg(all(feature = "async_std", not(any(feature = "sync", feature = "async_tokio"))))]
 pub async fn setup_test_server<F, Fut>(server_url: Option<&str>, server_factory: F) -> TestResult<&'static str>
 where
@@ -617,47 +704,6 @@ pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Opti
     .map_err(|err| TestError::new(format!("failed to read response from test server: {}", err)))?;
 
   compare_response(buffer, expected_response)
-}
-
-#[cfg(all(feature = "async_std", not(any(feature = "sync", feature = "async_tokio"))))]
-pub async fn run_test_suite<F, Fut>(
-  server_url: Option<&str>,
-  server_factory: F,
-  mut suite: TestSuite<'_>,
-) -> SuiteResult
-where
-  F: FnOnce() -> Fut + Send + 'static,
-  Fut: std::future::Future<Output = Server> + Send + 'static,
-{
-  let requested_url = server_url.unwrap_or(DEFAULT_TEST_SERVER_URL).to_string();
-  let mut result = SuiteResult {
-    server_url: None,
-    steps: Vec::new(),
-  };
-
-  match setup_test_server(Some(&requested_url), server_factory).await {
-    Ok(url) => {
-      result.server_url = Some(url);
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Ok(()),
-      });
-    }
-    Err(err) => {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Err(err),
-      });
-      return result;
-    }
-  }
-
-  run_async_suite_steps(&mut suite, &mut result).await;
-  result.steps.push(SuiteStepResult {
-    event: SuiteEvent::ServerShutdown,
-    result: shutdown_test_server(&requested_url),
-  });
-  result
 }
 
 #[cfg(all(
@@ -744,88 +790,4 @@ pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Opti
     .map_err(|err| TestError::new(format!("failed to read response from test server: {}", err)))?;
 
   compare_response(buffer, expected_response)
-}
-
-#[cfg(all(
-  feature = "async_smol",
-  not(any(feature = "sync", feature = "async_tokio", feature = "async_std"))
-))]
-pub async fn run_test_suite<F, Fut>(
-  server_url: Option<&str>,
-  server_factory: F,
-  mut suite: TestSuite<'_>,
-) -> SuiteResult
-where
-  F: FnOnce() -> Fut + Send + 'static,
-  Fut: std::future::Future<Output = Server> + Send + 'static,
-{
-  let requested_url = server_url.unwrap_or(DEFAULT_TEST_SERVER_URL).to_string();
-  let mut result = SuiteResult {
-    server_url: None,
-    steps: Vec::new(),
-  };
-
-  match setup_test_server(Some(&requested_url), server_factory).await {
-    Ok(url) => {
-      result.server_url = Some(url);
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Ok(()),
-      });
-    }
-    Err(err) => {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::ServerStart,
-        result: Err(err),
-      });
-      return result;
-    }
-  }
-
-  run_async_suite_steps(&mut suite, &mut result).await;
-  result.steps.push(SuiteStepResult {
-    event: SuiteEvent::ServerShutdown,
-    result: shutdown_test_server(&requested_url),
-  });
-  result
-}
-
-#[cfg(all(
-  not(feature = "sync"),
-  any(feature = "async_tokio", feature = "async_std", feature = "async_smol")
-))]
-async fn run_async_suite_steps(suite: &mut TestSuite<'_>, result: &mut SuiteResult) {
-  if let Some(before) = suite.before.as_mut() {
-    result.steps.push(SuiteStepResult {
-      event: SuiteEvent::Before,
-      result: before().await,
-    });
-  }
-
-  for named in &mut suite.tests {
-    let name = named.name.to_string();
-    if let Some(before_each) = suite.before_each.as_mut() {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::BeforeEach { test: name.clone() },
-        result: before_each().await,
-      });
-    }
-    result.steps.push(SuiteStepResult {
-      event: SuiteEvent::Test { test: name.clone() },
-      result: (named.test)().await,
-    });
-    if let Some(after_each) = suite.after_each.as_mut() {
-      result.steps.push(SuiteStepResult {
-        event: SuiteEvent::AfterEach { test: name },
-        result: after_each().await,
-      });
-    }
-  }
-
-  if let Some(after) = suite.after.as_mut() {
-    result.steps.push(SuiteStepResult {
-      event: SuiteEvent::After,
-      result: after().await,
-    });
-  }
 }
