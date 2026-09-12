@@ -7,20 +7,8 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
 use std::pin::Pin;
-#[cfg(any(
-  feature = "sync",
-  feature = "async_tokio",
-  feature = "async_std",
-  feature = "async_smol"
-))]
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
-#[cfg(any(
-  feature = "sync",
-  feature = "async_tokio",
-  feature = "async_std",
-  feature = "async_smol"
-))]
 use std::thread;
 use std::time::Duration;
 
@@ -263,6 +251,12 @@ pub fn shutdown_test_server(server_url: &str) -> TestResult {
   Ok(())
 }
 
+#[cfg(any(
+  feature = "sync",
+  feature = "async_tokio",
+  feature = "async_std",
+  feature = "async_smol"
+))]
 fn compare_response(buffer: Vec<u8>, expected_response: &[u8]) -> TestResult<String> {
   let buffer_string = String::from_utf8_lossy(&buffer).to_string();
   let expected_response_string = String::from_utf8_lossy(expected_response).to_string();
