@@ -57,20 +57,24 @@ Response {
 
 ## Testing
 
-Test helpers live in `httpageboy::test_utils` and work the same for sync and async runtimes:
-- `setup_test_server(server_url, factory)` starts a server once per URL and marks it active (pass `None` to reuse the default `127.0.0.1:0` and let the OS pick a port).
-- `run_test(request, expected, target_url)` opens a TCP connection to the active server (or the URL you pass), writes a raw HTTP payload, and asserts the response contains the expected bytes.
+Test helpers live in `httpageboy::test_utils`. They let a test suite own the server lifecycle:
+- `run_test_suite(server_url, factory, suite)` starts the server once, runs hooks and tests in order, shuts the server down, and returns every step result.
+- `run_test(request, expected, target_url)` sends a raw HTTP request to the active suite server and returns `TestResult<String>`.
+- Failures are accumulated in `SuiteResult`; the suite continues running the remaining tests and hooks.
 
-Async tokio example mirroring the current helpers:
+Minimal `async_tokio` example with more than one step:
 
 ```rust
 #![cfg(feature = "async_tokio")]
-use httpageboy::test_utils::{run_test, setup_test_server};
+use httpageboy::test_utils::{NamedTest, TestResult, TestSuite, run_test, run_test_suite};
 use httpageboy::{handler, Request, Response, Rt, Server, StatusCode};
 
+const TEST_SERVER_URL: &str = "127.0.0.1:48082";
+
 async fn server_factory() -> Server {
-  let mut server = Server::new("127.0.0.1:0", None).await.unwrap();
+  let mut server = Server::new(TEST_SERVER_URL, None).await.unwrap();
   server.add_route("/", Rt::GET, handler!(home));
+  server.add_route("/health", Rt::GET, handler!(health));
   server
 }
 
@@ -82,13 +86,62 @@ async fn home(_req: &Request) -> Response {
   }
 }
 
+async fn health(_req: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![("Content-Type".into(), "text/plain".into())],
+    body: b"healthy".to_vec(),
+  }
+}
+
 #[tokio::test]
-async fn test_home_ok() {
-  setup_test_server(None, || server_factory()).await;
-  let body = run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None).await;
-  assert!(body.contains("home"));
+async fn test_public_routes() -> TestResult {
+  let suite = TestSuite {
+    before: Some(Box::new(|| Box::pin(async { Ok(()) }))),
+    before_each: Some(Box::new(|| Box::pin(async { Ok(()) }))),
+    tests: vec![
+      NamedTest {
+        name: "home",
+        test: Box::new(|| {
+          Box::pin(async {
+            run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None)
+              .await
+              .map(|_| ())
+          })
+        }),
+      },
+      NamedTest {
+        name: "health",
+        test: Box::new(|| {
+          Box::pin(async {
+            run_test(b"GET /health HTTP/1.1\r\n\r\n", b"healthy", None)
+              .await
+              .map(|_| ())
+          })
+        }),
+      },
+    ],
+    after_each: Some(Box::new(|| Box::pin(async { Ok(()) }))),
+    after: Some(Box::new(|| Box::pin(async { Ok(()) }))),
+  };
+
+  let result = run_test_suite(Some(TEST_SERVER_URL), || server_factory(), suite).await;
+
+  if result.has_failures() {
+    let messages = result
+      .failures()
+      .iter()
+      .map(|step| format!("{:?}: {:?}", step.event, step.result))
+      .collect::<Vec<_>>()
+      .join("\n");
+    return Err(messages.into());
+  }
+
+  Ok(())
 }
 ```
+
+For `sync`, `async_std`, and `async_smol`, use the same `NamedTest`/`TestSuite`/`run_test_suite` model with the matching Cargo feature and runtime test attribute.
 
 ## CORS
 
