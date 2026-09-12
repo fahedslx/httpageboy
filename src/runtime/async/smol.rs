@@ -10,6 +10,8 @@ use smol::spawn;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::Duration;
 
 #[async_trait]
 impl shared::AsyncStream for TcpStream {
@@ -81,34 +83,58 @@ impl Server {
   pub async fn run(&self) {
     print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
     loop {
-      if let Ok((mut stream, _)) = self.listener.accept().await {
-        let routes = self.routes.clone();
-        let files = self.files_sources.clone();
-        let close_flag = self.auto_close;
-        let cors_policy = self.cors.clone();
-
-        spawn(async move {
-          let (mut req, early) = crate::core::request::parse_stream_smol(&mut stream, &routes, &files).await;
-          let origin = req.origin().map(str::to_string);
-          let method = req.method.clone();
-          let resp = match early {
-            Some(r) => r,
-            None => {
-              let routed = handle_request_async(&mut req, &routes, &files).await;
-              response_or_default(routed, &method, cors_policy.as_deref())
-            }
-          };
-          shared::send_response(
-            &mut stream,
-            &resp,
-            close_flag,
-            cors_policy.as_deref(),
-            origin.as_deref(),
-          )
-          .await;
-        })
-        .detach();
+      if let Ok((stream, _)) = self.listener.accept().await {
+        self.handle_stream(stream);
       }
     }
+  }
+
+  pub async fn run_until_shutdown(&self, shutdown_rx: mpsc::Receiver<()>) {
+    use futures::FutureExt;
+    use futures_lite::future;
+
+    print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
+    loop {
+      if shutdown_rx.try_recv().is_ok() {
+        break;
+      }
+      let accepted = future::race(
+        self.listener.accept().map(Some),
+        smol::Timer::after(Duration::from_millis(10)).map(|_| None),
+      )
+      .await;
+      if let Some(Ok((stream, _))) = accepted {
+        self.handle_stream(stream);
+      }
+    }
+  }
+
+  fn handle_stream(&self, mut stream: TcpStream) {
+    let routes = self.routes.clone();
+    let files = self.files_sources.clone();
+    let close_flag = self.auto_close;
+    let cors_policy = self.cors.clone();
+
+    spawn(async move {
+      let (mut req, early) = crate::core::request::parse_stream_smol(&mut stream, &routes, &files).await;
+      let origin = req.origin().map(str::to_string);
+      let method = req.method.clone();
+      let resp = match early {
+        Some(r) => r,
+        None => {
+          let routed = handle_request_async(&mut req, &routes, &files).await;
+          response_or_default(routed, &method, cors_policy.as_deref())
+        }
+      };
+      shared::send_response(
+        &mut stream,
+        &resp,
+        close_flag,
+        cors_policy.as_deref(),
+        origin.as_deref(),
+      )
+      .await;
+    })
+    .detach();
   }
 }

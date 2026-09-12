@@ -13,6 +13,8 @@ use std::io::prelude::Write;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc;
+use std::time::Duration;
 
 pub struct Server {
   url: String,
@@ -83,23 +85,7 @@ impl Server {
     for stream in self.listener.incoming() {
       match stream {
         Ok(stream) => {
-          let routes_local = self.routes.clone();
-          let sources_local = self.files_sources.clone();
-          let close_flag = self.auto_close;
-          let cors_policy = self.cors.clone();
-          let pool = Arc::clone(&self.pool);
-          pool.lock().unwrap().run(move || {
-            let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local);
-            let origin = request.origin().map(str::to_string);
-            let method = request.method.clone();
-            let response = if let Some(resp) = early_resp {
-              resp
-            } else {
-              let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
-              response_or_default(routed, &method, cors_policy.as_deref())
-            };
-            Self::send_response(stream, &response, close_flag, cors_policy.as_deref(), origin.as_deref())
-          });
+          self.handle_stream(stream);
         }
         Err(_err) => {
           // could log error here
@@ -108,9 +94,47 @@ impl Server {
     }
   }
 
+  pub fn run_until_shutdown(&self, shutdown_rx: mpsc::Receiver<()>) {
+    print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
+    let _ = self.listener.set_nonblocking(true);
+    loop {
+      if shutdown_rx.try_recv().is_ok() {
+        break;
+      }
+      match self.listener.accept() {
+        Ok((stream, _)) => self.handle_stream(stream),
+        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+          std::thread::sleep(Duration::from_millis(10));
+        }
+        Err(_err) => {}
+      }
+    }
+    self.stop();
+  }
+
   pub fn stop(&self) {
     let mut pool = self.pool.lock().unwrap();
     pool.stop();
+  }
+
+  fn handle_stream(&self, stream: TcpStream) {
+    let routes_local = self.routes.clone();
+    let sources_local = self.files_sources.clone();
+    let close_flag = self.auto_close;
+    let cors_policy = self.cors.clone();
+    let pool = Arc::clone(&self.pool);
+    pool.lock().unwrap().run(move || {
+      let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local);
+      let origin = request.origin().map(str::to_string);
+      let method = request.method.clone();
+      let response = if let Some(resp) = early_resp {
+        resp
+      } else {
+        let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
+        response_or_default(routed, &method, cors_policy.as_deref())
+      };
+      Self::send_response(stream, &response, close_flag, cors_policy.as_deref(), origin.as_deref())
+    });
   }
 
   fn send_response(
