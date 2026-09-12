@@ -1,5 +1,8 @@
 #![cfg(feature = "sync")]
-use httpageboy::test_utils::{POOL_SIZE, run_test, setup_test_server};
+use httpageboy::test_utils::{
+  NamedTest, POOL_SIZE, SuiteEvent, TestError, TestResult, TestSuite, is_test_server_registered, run_test,
+  run_test_suite, setup_test_server,
+};
 use httpageboy::{Request, Response, Rt, Server, StatusCode, handler};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -8,6 +11,7 @@ use std::time::Duration;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:38080";
 const STRICT_SERVER_URL: &str = "127.0.0.1:38081";
+const SUITE_SERVER_URL: &str = "127.0.0.1:38082";
 
 fn common_server_definition(server_url: &str) -> Server {
   let mut server = Server::new(server_url, POOL_SIZE, None).expect("failed to bind test server");
@@ -40,19 +44,29 @@ fn strict_server_definition() -> Server {
 }
 
 fn boot_regular() {
-  setup_test_server(Some(REGULAR_SERVER_URL), || regular_server_definition());
+  if let Err(err) = setup_test_server(Some(REGULAR_SERVER_URL), || regular_server_definition()) {
+    panic!("{}", err);
+  }
 }
 
 fn boot_strict() {
-  setup_test_server(Some(STRICT_SERVER_URL), || strict_server_definition());
+  if let Err(err) = setup_test_server(Some(STRICT_SERVER_URL), || strict_server_definition()) {
+    panic!("{}", err);
+  }
 }
 
 fn run_regular(request: &[u8], expected: &[u8]) -> String {
-  run_test(request, expected, Some(REGULAR_SERVER_URL))
+  match run_test(request, expected, Some(REGULAR_SERVER_URL)) {
+    Ok(response) => response,
+    Err(err) => panic!("{}", err),
+  }
 }
 
 fn run_strict(request: &[u8], expected: &[u8]) -> String {
-  run_test(request, expected, Some(STRICT_SERVER_URL))
+  match run_test(request, expected, Some(STRICT_SERVER_URL)) {
+    Ok(response) => response,
+    Err(err) => panic!("{}", err),
+  }
 }
 
 fn demo_handle_home(_request: &Request) -> Response {
@@ -554,7 +568,7 @@ fn test_missing_method() {
 }
 
 #[test]
-fn test_redirect_with_location_header() {
+fn test_redirect_with_location_header() -> TestResult {
   boot_regular();
   let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect");
   assert!(
@@ -567,10 +581,11 @@ fn test_redirect_with_location_header() {
     "wrong Content-Length for redirect: {}",
     response
   );
+  Ok(())
 }
 
 #[test]
-fn test_json_content_type_header() {
+fn test_json_content_type_header() -> TestResult {
   boot_regular();
   let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#);
   assert!(
@@ -583,10 +598,11 @@ fn test_json_content_type_header() {
     "wrong Content-Length for JSON: {}",
     response
   );
+  Ok(())
 }
 
 #[test]
-fn test_custom_header_is_serialized() {
+fn test_custom_header_is_serialized() -> TestResult {
   boot_regular();
   let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom");
   assert!(
@@ -599,4 +615,122 @@ fn test_custom_header_is_serialized() {
     "missing Content-Type: {}",
     response
   );
+  Ok(())
+}
+
+#[test]
+fn test_suite_lifecycle_accumulates_results_and_shuts_down_server() {
+  use std::cell::RefCell;
+  use std::rc::Rc;
+
+  let order = Rc::new(RefCell::new(Vec::new()));
+  let urls = Rc::new(RefCell::new(Vec::new()));
+
+  let suite = TestSuite {
+    before: Some(Box::new({
+      let order = Rc::clone(&order);
+      move || {
+        order.borrow_mut().push("before");
+        Ok(())
+      }
+    })),
+    before_each: Some(Box::new({
+      let order = Rc::clone(&order);
+      move || {
+        order.borrow_mut().push("before_each");
+        Ok(())
+      }
+    })),
+    tests: vec![
+      NamedTest {
+        name: "one",
+        test: Box::new({
+          let order = Rc::clone(&order);
+          let urls = Rc::clone(&urls);
+          move || {
+            order.borrow_mut().push("test_1");
+            urls
+              .borrow_mut()
+              .push(httpageboy::test_utils::active_test_server_url().to_string());
+            run_test(b"GET /test HTTP/1.1\r\n\r\n", b"get", None).map(|_| ())
+          }
+        }),
+      },
+      NamedTest {
+        name: "two",
+        test: Box::new({
+          let order = Rc::clone(&order);
+          let urls = Rc::clone(&urls);
+          move || {
+            order.borrow_mut().push("test_2");
+            urls
+              .borrow_mut()
+              .push(httpageboy::test_utils::active_test_server_url().to_string());
+            Err(TestError::new("controlled failure"))
+          }
+        }),
+      },
+      NamedTest {
+        name: "three",
+        test: Box::new({
+          let order = Rc::clone(&order);
+          let urls = Rc::clone(&urls);
+          move || {
+            order.borrow_mut().push("test_3");
+            urls
+              .borrow_mut()
+              .push(httpageboy::test_utils::active_test_server_url().to_string());
+            run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None).map(|_| ())
+          }
+        }),
+      },
+    ],
+    after_each: Some(Box::new({
+      let order = Rc::clone(&order);
+      move || {
+        order.borrow_mut().push("after_each");
+        Ok(())
+      }
+    })),
+    after: Some(Box::new({
+      let order = Rc::clone(&order);
+      move || {
+        order.borrow_mut().push("after");
+        Ok(())
+      }
+    })),
+  };
+
+  let result = run_test_suite(
+    Some(SUITE_SERVER_URL),
+    || common_server_definition(SUITE_SERVER_URL),
+    suite,
+  );
+
+  assert_eq!(
+    order.borrow().as_slice(),
+    [
+      "before",
+      "before_each",
+      "test_1",
+      "after_each",
+      "before_each",
+      "test_2",
+      "after_each",
+      "before_each",
+      "test_3",
+      "after_each",
+      "after",
+    ]
+  );
+  assert_eq!(urls.borrow().len(), 3);
+  assert!(urls.borrow().iter().all(|url| url == &urls.borrow()[0]));
+  assert!(result.has_failures());
+  assert_eq!(result.failures().len(), 1);
+  assert!(matches!(
+    result.steps.iter().find(|step| step.result.is_err()).map(|step| &step.event),
+    Some(SuiteEvent::Test { test }) if test == "two"
+  ));
+  assert!(!is_test_server_registered(SUITE_SERVER_URL));
+  assert!(std::net::TcpListener::bind(SUITE_SERVER_URL).is_ok());
 }

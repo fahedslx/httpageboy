@@ -7,6 +7,8 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -80,33 +82,49 @@ impl Server {
   pub async fn run(&self) {
     print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
     loop {
-      if let Ok((mut stream, _)) = self.listener.accept().await {
-        let routes = self.routes.clone();
-        let sources = self.files_sources.clone();
-        let close_flag = self.auto_close;
-        let cors_policy = self.cors.clone();
-
-        tokio::spawn(async move {
-          let (mut req, early) = crate::core::request::parse_stream_tokio(&mut stream, &routes, &sources).await;
-          let origin = req.origin().map(str::to_string);
-          let method = req.method.clone();
-          let resp = match early {
-            Some(r) => r,
-            None => {
-              let routed = handle_request_async(&mut req, &routes, &sources).await;
-              response_or_default(routed, &method, cors_policy.as_deref())
-            }
-          };
-          shared::send_response(
-            &mut stream,
-            &resp,
-            close_flag,
-            cors_policy.as_deref(),
-            origin.as_deref(),
-          )
-          .await;
-        });
+      if let Ok((stream, _)) = self.listener.accept().await {
+        self.handle_stream(stream);
       }
     }
+  }
+
+  pub async fn run_until_shutdown(&self, shutdown_rx: mpsc::Receiver<()>) {
+    print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
+    loop {
+      if shutdown_rx.try_recv().is_ok() {
+        break;
+      }
+      if let Ok(Ok((stream, _))) = tokio::time::timeout(Duration::from_millis(10), self.listener.accept()).await {
+        self.handle_stream(stream);
+      }
+    }
+  }
+
+  fn handle_stream(&self, mut stream: TcpStream) {
+    let routes = self.routes.clone();
+    let sources = self.files_sources.clone();
+    let close_flag = self.auto_close;
+    let cors_policy = self.cors.clone();
+
+    tokio::spawn(async move {
+      let (mut req, early) = crate::core::request::parse_stream_tokio(&mut stream, &routes, &sources).await;
+      let origin = req.origin().map(str::to_string);
+      let method = req.method.clone();
+      let resp = match early {
+        Some(r) => r,
+        None => {
+          let routed = handle_request_async(&mut req, &routes, &sources).await;
+          response_or_default(routed, &method, cors_policy.as_deref())
+        }
+      };
+      shared::send_response(
+        &mut stream,
+        &resp,
+        close_flag,
+        cors_policy.as_deref(),
+        origin.as_deref(),
+      )
+      .await;
+    });
   }
 }

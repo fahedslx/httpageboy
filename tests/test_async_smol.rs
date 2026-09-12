@@ -1,11 +1,14 @@
 #![cfg(feature = "async_smol")]
 
-use httpageboy::test_utils::{run_test, setup_test_server};
+use httpageboy::test_utils::{
+  NamedTest, SuiteEvent, TestError, TestSuite, is_test_server_registered, run_test, run_test_suite, setup_test_server,
+};
 use httpageboy::{Request, Response, Rt, Server, StatusCode, handler};
 use std::collections::BTreeMap;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:28080";
 const STRICT_SERVER_URL: &str = "127.0.0.1:28081";
+const SUITE_SERVER_URL: &str = "127.0.0.1:28082";
 
 async fn common_server_definition(server_url: &str) -> Server {
   let mut server = match Server::new(server_url, None).await {
@@ -47,19 +50,29 @@ async fn create_test_server() -> Server {
 }
 
 async fn boot_regular() {
-  setup_test_server(Some(REGULAR_SERVER_URL), || create_test_server()).await;
+  if let Err(err) = setup_test_server(Some(REGULAR_SERVER_URL), || create_test_server()).await {
+    panic!("{}", err);
+  }
 }
 
 async fn boot_strict() {
-  setup_test_server(Some(STRICT_SERVER_URL), || strict_server_definition()).await;
+  if let Err(err) = setup_test_server(Some(STRICT_SERVER_URL), || strict_server_definition()).await {
+    panic!("{}", err);
+  }
 }
 
 async fn run_regular(request: &[u8], expected: &[u8]) -> String {
-  run_test(request, expected, Some(REGULAR_SERVER_URL)).await
+  match run_test(request, expected, Some(REGULAR_SERVER_URL)).await {
+    Ok(response) => response,
+    Err(err) => panic!("{}", err),
+  }
 }
 
 async fn run_strict(request: &[u8], expected: &[u8]) -> String {
-  run_test(request, expected, Some(STRICT_SERVER_URL)).await
+  match run_test(request, expected, Some(STRICT_SERVER_URL)).await {
+    Ok(response) => response,
+    Err(err) => panic!("{}", err),
+  }
 }
 
 async fn demo_handle_home(_request: &Request) -> Response {
@@ -712,5 +725,152 @@ fn test_custom_header_is_serialized() {
       "missing Content-Type: {}",
       response
     );
+  });
+}
+
+#[test]
+fn test_suite_lifecycle_accumulates_results_and_shuts_down_server() {
+  smol::block_on(async {
+    use std::sync::{Arc, Mutex};
+
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let urls = Arc::new(Mutex::new(Vec::new()));
+
+    let suite = TestSuite {
+      before: Some(Box::new({
+        let order = Arc::clone(&order);
+        move || {
+          let order = Arc::clone(&order);
+          Box::pin(async move {
+            order.lock().unwrap().push("before");
+            Ok(())
+          })
+        }
+      })),
+      before_each: Some(Box::new({
+        let order = Arc::clone(&order);
+        move || {
+          let order = Arc::clone(&order);
+          Box::pin(async move {
+            order.lock().unwrap().push("before_each");
+            Ok(())
+          })
+        }
+      })),
+      tests: vec![
+        NamedTest {
+          name: "one",
+          test: Box::new({
+            let order = Arc::clone(&order);
+            let urls = Arc::clone(&urls);
+            move || {
+              let order = Arc::clone(&order);
+              let urls = Arc::clone(&urls);
+              Box::pin(async move {
+                order.lock().unwrap().push("test_1");
+                urls
+                  .lock()
+                  .unwrap()
+                  .push(httpageboy::test_utils::active_test_server_url().to_string());
+                run_test(b"GET /test HTTP/1.1\r\n\r\n", b"get", None).await.map(|_| ())
+              })
+            }
+          }),
+        },
+        NamedTest {
+          name: "two",
+          test: Box::new({
+            let order = Arc::clone(&order);
+            let urls = Arc::clone(&urls);
+            move || {
+              let order = Arc::clone(&order);
+              let urls = Arc::clone(&urls);
+              Box::pin(async move {
+                order.lock().unwrap().push("test_2");
+                urls
+                  .lock()
+                  .unwrap()
+                  .push(httpageboy::test_utils::active_test_server_url().to_string());
+                Err(TestError::new("controlled failure"))
+              })
+            }
+          }),
+        },
+        NamedTest {
+          name: "three",
+          test: Box::new({
+            let order = Arc::clone(&order);
+            let urls = Arc::clone(&urls);
+            move || {
+              let order = Arc::clone(&order);
+              let urls = Arc::clone(&urls);
+              Box::pin(async move {
+                order.lock().unwrap().push("test_3");
+                urls
+                  .lock()
+                  .unwrap()
+                  .push(httpageboy::test_utils::active_test_server_url().to_string());
+                run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None).await.map(|_| ())
+              })
+            }
+          }),
+        },
+      ],
+      after_each: Some(Box::new({
+        let order = Arc::clone(&order);
+        move || {
+          let order = Arc::clone(&order);
+          Box::pin(async move {
+            order.lock().unwrap().push("after_each");
+            Ok(())
+          })
+        }
+      })),
+      after: Some(Box::new({
+        let order = Arc::clone(&order);
+        move || {
+          let order = Arc::clone(&order);
+          Box::pin(async move {
+            order.lock().unwrap().push("after");
+            Ok(())
+          })
+        }
+      })),
+    };
+
+    let result = run_test_suite(
+      Some(SUITE_SERVER_URL),
+      || common_server_definition(SUITE_SERVER_URL),
+      suite,
+    )
+    .await;
+
+    assert_eq!(
+      order.lock().unwrap().as_slice(),
+      [
+        "before",
+        "before_each",
+        "test_1",
+        "after_each",
+        "before_each",
+        "test_2",
+        "after_each",
+        "before_each",
+        "test_3",
+        "after_each",
+        "after",
+      ]
+    );
+    let urls = urls.lock().unwrap().clone();
+    assert_eq!(urls.len(), 3);
+    assert!(urls.iter().all(|url| url == &urls[0]));
+    assert!(result.has_failures());
+    assert_eq!(result.failures().len(), 1);
+    assert!(matches!(
+      result.steps.iter().find(|step| step.result.is_err()).map(|step| &step.event),
+      Some(SuiteEvent::Test { test }) if test == "two"
+    ));
+    assert!(!is_test_server_registered(SUITE_SERVER_URL));
+    assert!(std::net::TcpListener::bind(SUITE_SERVER_URL).is_ok());
   });
 }
