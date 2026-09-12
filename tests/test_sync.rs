@@ -1,9 +1,8 @@
 #![cfg(feature = "sync")]
 use httpageboy::test_utils::{
-  NamedTest, POOL_SIZE, SuiteEvent, TestError, TestResult, TestSuite, is_test_server_registered, run_test,
-  run_test_suite, setup_test_server,
+  POOL_SIZE, TestResult, is_test_server_registered, run_test, setup_test_server, shutdown_test_server,
 };
-use httpageboy::{Request, Response, Rt, Server, StatusCode, handler};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, handler, test_case};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -12,6 +11,8 @@ use std::time::Duration;
 const REGULAR_SERVER_URL: &str = "127.0.0.1:38080";
 const STRICT_SERVER_URL: &str = "127.0.0.1:38081";
 const SUITE_SERVER_URL: &str = "127.0.0.1:38082";
+const SUITE_ERROR_SERVER_URL: &str = "127.0.0.1:38083";
+const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:38084";
 
 fn common_server_definition(server_url: &str) -> Server {
   let mut server = Server::new(server_url, POOL_SIZE, None).expect("failed to bind test server");
@@ -43,20 +44,30 @@ fn strict_server_definition() -> Server {
   common_server_definition(STRICT_SERVER_URL)
 }
 
-fn boot_regular() -> TestResult {
-  setup_test_server(Some(REGULAR_SERVER_URL), || regular_server_definition()).map(|_| ())
+fn boot_regular() {
+  if let Err(err) = setup_test_server(Some(REGULAR_SERVER_URL), || regular_server_definition()) {
+    panic!("{}", err);
+  }
 }
 
-fn boot_strict() -> TestResult {
-  setup_test_server(Some(STRICT_SERVER_URL), || strict_server_definition()).map(|_| ())
+fn boot_strict() {
+  if let Err(err) = setup_test_server(Some(STRICT_SERVER_URL), || strict_server_definition()) {
+    panic!("{}", err);
+  }
 }
 
-fn run_regular(request: &[u8], expected: &[u8]) -> TestResult<String> {
-  run_test(request, expected, Some(REGULAR_SERVER_URL))
+fn run_regular(request: &[u8], expected: &[u8]) -> String {
+  match run_test(request, expected, Some(REGULAR_SERVER_URL)) {
+    Ok(response) => response,
+    Err(err) => panic!("{}", err),
+  }
 }
 
-fn run_strict(request: &[u8], expected: &[u8]) -> TestResult<String> {
-  run_test(request, expected, Some(STRICT_SERVER_URL))
+fn run_strict(request: &[u8], expected: &[u8]) -> String {
+  match run_test(request, expected, Some(STRICT_SERVER_URL)) {
+    Ok(response) => response,
+    Err(err) => panic!("{}", err),
+  }
 }
 
 fn demo_handle_home(_request: &Request) -> Response {
@@ -177,84 +188,78 @@ fn demo_handle_custom_header(_request: &Request) -> Response {
 }
 
 #[test]
-fn test_home() -> TestResult {
-  boot_regular()?;
+fn test_home() {
+  boot_regular();
   let request = b"GET / HTTP/1.1\r\n\r\n";
   let expected_response = b"home";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_get() -> TestResult {
-  boot_regular()?;
+fn test_get() {
+  boot_regular();
   let request = b"GET /test HTTP/1.1\r\n\r\n";
   let expected_response = b"get";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_get_with_query() -> TestResult {
-  boot_regular()?;
+fn test_get_with_query() {
+  boot_regular();
   let request = b"GET /test?foo=bar&baz=qux HTTP/1.1\r\n\r\n";
   let expected_response = b"get";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_get_no_content_length() -> TestResult {
-  boot_regular()?;
+fn test_get_no_content_length() {
+  boot_regular();
   let request = b"GET /test HTTP/1.1\r\n\r\n";
   let expected_response = b"get";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_get_with_content_length_matching_body() -> TestResult {
-  boot_regular()?;
+fn test_get_with_content_length_matching_body() {
+  boot_regular();
   let request = b"GET /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
   let expected_response = b"get";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_get_with_content_length_smaller_than_body() -> TestResult {
-  boot_regular()?;
+fn test_get_with_content_length_smaller_than_body() {
+  boot_regular();
   let request = b"GET /test HTTP/1.1\r\nContent-Length: 1\r\n\r\npong";
   let expected_response = b"get";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_get_with_content_length_larger_than_body() -> TestResult {
-  boot_regular()?;
+fn test_get_with_content_length_larger_than_body() {
+  boot_regular();
   let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
   let expected_response = b"get";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post() -> TestResult {
-  boot_regular()?;
+fn test_post() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_without_content_length_client_keeps_socket_open() -> TestResult {
-  boot_regular()?;
+fn test_post_without_content_length_client_keeps_socket_open() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\n\r\npayload-open";
-  let mut stream = TcpStream::connect(REGULAR_SERVER_URL)?;
-  stream.write_all(request)?;
-  stream.set_read_timeout(Some(Duration::from_millis(500)))?;
+  let mut stream = TcpStream::connect(REGULAR_SERVER_URL).expect("connect to test server");
+  stream.write_all(request).expect("write request");
+  stream
+    .set_read_timeout(Some(Duration::from_millis(500)))
+    .expect("set read timeout");
   let mut buf = Vec::new();
   let mut chunk = [0u8; 1024];
   loop {
@@ -262,7 +267,7 @@ fn test_post_without_content_length_client_keeps_socket_open() -> TestResult {
       Ok(0) => break,
       Ok(n) => buf.extend_from_slice(&chunk[..n]),
       Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => break,
-      Err(e) => return Err(TestError::new(format!("read error: {:?}", e))),
+      Err(e) => panic!("read error: {:?}", e),
     }
   }
   let text = String::from_utf8_lossy(&buf);
@@ -271,339 +276,302 @@ fn test_post_without_content_length_client_keeps_socket_open() -> TestResult {
     "response not received or missing body, got: {}",
     text
   );
-  Ok(())
 }
 
 #[test]
-fn test_post_without_content_length_empty_body() -> TestResult {
-  boot_regular()?;
+fn test_post_without_content_length_empty_body() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\n\r\n";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_with_query() -> TestResult {
-  boot_regular()?;
+fn test_post_with_query() {
+  boot_regular();
   let request = b"POST /test?foo=bar HTTP/1.1\r\n\r\nmueve tu cuerpo";
   let expected_response = b"Method: POST\nUri: /test\nParams: {\"foo\": \"bar\"}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_with_content_length() -> TestResult {
-  boot_regular()?;
+fn test_post_with_content_length() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 15\r\n\r\nmueve tu cuerpo";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_with_params() -> TestResult {
-  boot_regular()?;
+fn test_post_with_params() {
+  boot_regular();
   let request = b"POST /test/hola/que?param4=hoy&param3=hace HTTP/1.1\r\n\r\nmueve tu cuerpo";
   let expected_response =
     b"Method: POST\nUri: /test/hola/que\nParams: {\"param1\": \"hola\", \"param2\": \"que\", \"param3\": \"hace\", \"param4\": \"hoy\"}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_with_incomplete_path_params() -> TestResult {
-  boot_regular()?;
+fn test_post_with_incomplete_path_params() {
+  boot_regular();
   let request = b"POST /test/hola HTTP/1.1\r\n\r\nmueve tu cuerpo";
   let expected_response = b"Method: POST\nUri: /test/hola\nParams: {\"param1\": \"hola\"}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_without_content_length_body() -> TestResult {
-  boot_regular()?;
+fn test_post_without_content_length_body() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\n\r\nbody";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_with_matching_content_length() -> TestResult {
-  boot_regular()?;
+fn test_post_with_matching_content_length() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nbody";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_with_smaller_content_length() -> TestResult {
-  boot_regular()?;
+fn test_post_with_smaller_content_length() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 2\r\n\r\nbody";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"bo\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_post_with_larger_content_length() -> TestResult {
-  boot_regular()?;
+fn test_post_with_larger_content_length() {
+  boot_regular();
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
   let expected_response = b"HTTP/1.1 200 OK";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_put() -> TestResult {
-  boot_regular()?;
+fn test_put() {
+  boot_regular();
   let request = b"PUT /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
   let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_put_without_content_length() -> TestResult {
-  boot_regular()?;
+fn test_put_without_content_length() {
+  boot_regular();
   let request = b"PUT /test HTTP/1.1\r\n\r\nput";
   let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_put_with_matching_content_length() -> TestResult {
-  boot_regular()?;
+fn test_put_with_matching_content_length() {
+  boot_regular();
   let request = b"PUT /test HTTP/1.1\r\nContent-Length: 3\r\n\r\nput";
   let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_put_with_smaller_content_length() -> TestResult {
-  boot_regular()?;
+fn test_put_with_smaller_content_length() {
+  boot_regular();
   let request = b"PUT /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nput";
   let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"p\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_put_with_larger_content_length() -> TestResult {
-  boot_regular()?;
+fn test_put_with_larger_content_length() {
+  boot_regular();
   let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
   let expected_response = b"HTTP/1.1 200 OK";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_patch() -> TestResult {
-  boot_regular()?;
+fn test_patch() {
+  boot_regular();
   let request = b"PATCH /test HTTP/1.1\r\n\r\npatch";
   let expected_response = b"Method: PATCH\nUri: /test\nParams: {}\nBody: \"patch\"";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_head() -> TestResult {
-  boot_regular()?;
+fn test_head() {
+  boot_regular();
   let request = b"HEAD /test HTTP/1.1\r\n\r\n";
   let expected_response = b"head";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_options() -> TestResult {
-  boot_regular()?;
+fn test_options() {
+  boot_regular();
   let request = b"OPTIONS /test HTTP/1.1\r\n\r\n";
   let expected_response = b"options";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_connect() -> TestResult {
-  boot_regular()?;
+fn test_connect() {
+  boot_regular();
   let request = b"CONNECT /test HTTP/1.1\r\n\r\n";
   let expected_response = b"connect";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_trace() -> TestResult {
-  boot_regular()?;
+fn test_trace() {
+  boot_regular();
   let request = b"TRACE /test HTTP/1.1\r\n\r\n";
   let expected_response = b"trace";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_delete() -> TestResult {
-  boot_regular()?;
+fn test_delete() {
+  boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\n\r\n";
   let expected_response = b"delete";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_delete_no_content_length() -> TestResult {
-  boot_regular()?;
+fn test_delete_no_content_length() {
+  boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\n\r\n";
   let expected_response = b"delete";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_delete_with_content_length_matching_body() -> TestResult {
-  boot_regular()?;
+fn test_delete_with_content_length_matching_body() {
+  boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
   let expected_response = b"delete";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_delete_with_content_length_smaller_than_body() -> TestResult {
-  boot_regular()?;
+fn test_delete_with_content_length_smaller_than_body() {
+  boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nping";
   let expected_response = b"delete";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_delete_with_content_length_larger_than_body() -> TestResult {
-  boot_regular()?;
+fn test_delete_with_content_length_larger_than_body() {
+  boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
   let expected_response = b"delete";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_strict_mode_without_content_length() -> TestResult {
-  boot_strict()?;
+fn test_strict_mode_without_content_length() {
+  boot_strict();
   let request = b"POST /test HTTP/1.1\r\n\r\npayload";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
-  run_strict(request, expected_response)?;
-  Ok(())
+  run_strict(request, expected_response);
 }
 
 #[test]
-fn test_strict_mode_with_content_length() -> TestResult {
-  boot_strict()?;
+fn test_strict_mode_with_content_length() {
+  boot_strict();
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 7\r\n\r\npayload";
   let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
-  run_strict(request, expected_response)?;
-  Ok(())
+  run_strict(request, expected_response);
 }
 
 #[test]
-fn test_strict_mode_get_without_content_length() -> TestResult {
-  boot_strict()?;
+fn test_strict_mode_get_without_content_length() {
+  boot_strict();
   let request = b"GET /test HTTP/1.1\r\n\r\n";
   let expected_response = b"get";
-  run_strict(request, expected_response)?;
-  Ok(())
+  run_strict(request, expected_response);
 }
 
 #[test]
-fn test_file_exists() -> TestResult {
-  boot_regular()?;
+fn test_file_exists() {
+  boot_regular();
   let request = b"GET /numano.png HTTP/1.1\r\nHost: localhost\r\n\r\n";
   let expected_response = b"HTTP/1.1 200 OK";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_file_not_found() -> TestResult {
-  boot_regular()?;
+fn test_file_not_found() {
+  boot_regular();
   let request = b"GET /test.png HTTP/1.1\r\n\r\n";
   let expected_response = b"HTTP/1.1 404 Not Found";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_method_not_allowed() -> TestResult {
-  boot_regular()?;
+fn test_method_not_allowed() {
+  boot_regular();
   let request = b"BREW /coffee HTTP/1.1\r\n\r\n";
   let expected_response = b"HTTP/1.1 405 Method Not Allowed";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_allowed_method_missing_route() -> TestResult {
-  boot_regular()?;
+fn test_allowed_method_missing_route() {
+  boot_regular();
   let request = b"TRACE /missing HTTP/1.1\r\n\r\n";
   let expected_response = b"HTTP/1.1 404 Not Found";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_empty_request() -> TestResult {
-  boot_regular()?;
+fn test_empty_request() {
+  boot_regular();
   let request = b"";
   let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_malformed_request() -> TestResult {
-  boot_regular()?;
+fn test_malformed_request() {
+  boot_regular();
   let request = b"THIS_IS_NOT_HTTP\r\n\r\n";
   let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_unsupported_http_version() -> TestResult {
-  boot_regular()?;
+fn test_unsupported_http_version() {
+  boot_regular();
   let request = b"GET / HTTP/0.9\r\n\r\n";
   let expected_response = b"HTTP/1.1 505 HTTP Version Not Supported";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
-fn test_long_path() -> TestResult {
-  boot_regular()?;
+fn test_long_path() {
+  boot_regular();
   let long_path = "/".to_string() + &"a".repeat(10_000);
   let request = format!("GET {} HTTP/1.1\r\n\r\n", long_path);
   let expected_response = b"HTTP/1.1 414 URI Too Long";
-  run_regular(request.as_bytes(), expected_response)?;
-  Ok(())
+  run_regular(request.as_bytes(), expected_response);
 }
 
 #[test]
-fn test_missing_method() -> TestResult {
-  boot_regular()?;
+fn test_missing_method() {
+  boot_regular();
   let request = b"/ HTTP/1.1\r\n\r\n";
   let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response)?;
-  Ok(())
+  run_regular(request, expected_response);
 }
 
 #[test]
 fn test_redirect_with_location_header() -> TestResult {
-  boot_regular()?;
-  let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect")?;
+  boot_regular();
+  let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect");
   assert!(
     response.contains("Location: https://example.com"),
     "missing Location header: {}",
@@ -619,8 +587,8 @@ fn test_redirect_with_location_header() -> TestResult {
 
 #[test]
 fn test_json_content_type_header() -> TestResult {
-  boot_regular()?;
-  let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#)?;
+  boot_regular();
+  let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#);
   assert!(
     response.contains("Content-Type: application/json"),
     "missing JSON content type: {}",
@@ -636,8 +604,8 @@ fn test_json_content_type_header() -> TestResult {
 
 #[test]
 fn test_custom_header_is_serialized() -> TestResult {
-  boot_regular()?;
-  let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom")?;
+  boot_regular();
+  let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom");
   assert!(
     response.contains("X-Trace-Id: abc-123"),
     "missing custom header: {}",
@@ -652,119 +620,111 @@ fn test_custom_header_is_serialized() -> TestResult {
 }
 
 #[test]
-fn test_suite_lifecycle_accumulates_results_and_shuts_down_server() -> TestResult {
+fn test_case_lifecycle_runs_hooks_per_request() -> TestResult {
   use std::cell::RefCell;
   use std::rc::Rc;
 
   let order = Rc::new(RefCell::new(Vec::new()));
   let urls = Rc::new(RefCell::new(Vec::new()));
 
-  let suite = TestSuite {
-    before: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("before");
-        Ok(())
-      }
-    })),
-    before_each: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("before_each");
-        Ok(())
-      }
-    })),
-    tests: vec![
-      NamedTest {
-        name: "one",
-        test: Box::new({
-          let order = Rc::clone(&order);
-          let urls = Rc::clone(&urls);
-          move || {
-            order.borrow_mut().push("test_1");
-            urls
-              .borrow_mut()
-              .push(httpageboy::test_utils::active_test_server_url().to_string());
-            run_test(b"GET /test HTTP/1.1\r\n\r\n", b"get", None).map(|_| ())
-          }
-        }),
-      },
-      NamedTest {
-        name: "two",
-        test: Box::new({
-          let order = Rc::clone(&order);
-          let urls = Rc::clone(&urls);
-          move || {
-            order.borrow_mut().push("test_2");
-            urls
-              .borrow_mut()
-              .push(httpageboy::test_utils::active_test_server_url().to_string());
-            Err(TestError::new("controlled failure"))
-          }
-        }),
-      },
-      NamedTest {
-        name: "three",
-        test: Box::new({
-          let order = Rc::clone(&order);
-          let urls = Rc::clone(&urls);
-          move || {
-            order.borrow_mut().push("test_3");
-            urls
-              .borrow_mut()
-              .push(httpageboy::test_utils::active_test_server_url().to_string());
-            run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None).map(|_| ())
-          }
-        }),
-      },
-    ],
-    after_each: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("after_each");
-        Ok(())
-      }
-    })),
-    after: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("after");
-        Ok(())
-      }
-    })),
-  };
+  test_case! {
+    before {
+      order.borrow_mut().push("before");
+      setup_test_server(Some(SUITE_SERVER_URL), || common_server_definition(SUITE_SERVER_URL))?;
+    }
+    before_each {
+      order.borrow_mut().push("before_each");
+    }
+    test |api| {
+      order.borrow_mut().push("test_1");
+      urls
+        .borrow_mut()
+        .push(httpageboy::test_utils::active_test_server_url().to_string());
+      api.run(b"GET /test HTTP/1.1\r\n\r\n", b"get")?;
 
-  let result = run_test_suite(
-    Some(SUITE_SERVER_URL),
-    || common_server_definition(SUITE_SERVER_URL),
-    suite,
-  );
+      order.borrow_mut().push("test_2");
+      urls
+        .borrow_mut()
+        .push(httpageboy::test_utils::active_test_server_url().to_string());
+      api.run(b"GET / HTTP/1.1\r\n\r\n", b"home")?;
+    }
+    after_each {
+      order.borrow_mut().push("after_each");
+    }
+    after {
+      order.borrow_mut().push("after");
+      shutdown_test_server(SUITE_SERVER_URL)?;
+    }
+  }?;
 
   assert_eq!(
     order.borrow().as_slice(),
     [
       "before",
-      "before_each",
       "test_1",
-      "after_each",
       "before_each",
+      "after_each",
       "test_2",
-      "after_each",
       "before_each",
-      "test_3",
       "after_each",
       "after",
     ]
   );
-  assert_eq!(urls.borrow().len(), 3);
+  assert_eq!(urls.borrow().len(), 2);
   assert!(urls.borrow().iter().all(|url| url == &urls.borrow()[0]));
-  assert!(result.has_failures());
-  assert_eq!(result.failures().len(), 1);
-  assert!(matches!(
-    result.steps.iter().find(|step| step.result.is_err()).map(|step| &step.event),
-    Some(SuiteEvent::Test { test }) if test == "two"
-  ));
   assert!(!is_test_server_registered(SUITE_SERVER_URL));
   assert!(std::net::TcpListener::bind(SUITE_SERVER_URL).is_ok());
+  Ok(())
+}
+
+#[test]
+fn test_case_runs_cleanup_after_request_error() -> TestResult {
+  use std::cell::RefCell;
+  use std::rc::Rc;
+
+  let order = Rc::new(RefCell::new(Vec::new()));
+  let result = test_case! {
+    before {
+      order.borrow_mut().push("before");
+      setup_test_server(Some(SUITE_ERROR_SERVER_URL), || common_server_definition(SUITE_ERROR_SERVER_URL))?;
+    }
+    before_each {
+      order.borrow_mut().push("before_each");
+    }
+    test |t| {
+      order.borrow_mut().push("test");
+      t.run(b"GET /test HTTP/1.1\r\n\r\n", b"missing")?;
+      order.borrow_mut().push("after_failed_request");
+    }
+    after_each {
+      order.borrow_mut().push("after_each");
+    }
+    after {
+      order.borrow_mut().push("after");
+      shutdown_test_server(SUITE_ERROR_SERVER_URL)?;
+    }
+  };
+
+  assert!(result.is_err());
+  assert_eq!(
+    order.borrow().as_slice(),
+    ["before", "test", "before_each", "after_each", "after"]
+  );
+  assert!(!is_test_server_registered(SUITE_ERROR_SERVER_URL));
+  Ok(())
+}
+
+#[test]
+fn test_case_accepts_only_test_block() -> TestResult {
+  let url = setup_test_server(Some(SUITE_MINIMAL_SERVER_URL), || {
+    common_server_definition(SUITE_MINIMAL_SERVER_URL)
+  })?;
+  assert!(is_test_server_registered(url));
+  test_case! {
+    test |client| {
+      client.run(b"GET / HTTP/1.1\r\n\r\n", b"home")?;
+    }
+  }?;
+  shutdown_test_server(SUITE_MINIMAL_SERVER_URL)?;
   Ok(())
 }
