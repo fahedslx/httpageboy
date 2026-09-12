@@ -1,14 +1,16 @@
 #![cfg(feature = "async_smol")]
 
 use httpageboy::test_utils::{
-  NamedTest, SuiteEvent, TestError, TestSuite, is_test_server_registered, run_test, run_test_suite, setup_test_server,
+  TestResult, is_test_server_registered, run_test, setup_test_server, shutdown_test_server,
 };
-use httpageboy::{Request, Response, Rt, Server, StatusCode, handler};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, handler, test_case};
 use std::collections::BTreeMap;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:28080";
 const STRICT_SERVER_URL: &str = "127.0.0.1:28081";
 const SUITE_SERVER_URL: &str = "127.0.0.1:28082";
+const SUITE_ERROR_SERVER_URL: &str = "127.0.0.1:28083";
+const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:28084";
 
 async fn common_server_definition(server_url: &str) -> Server {
   let mut server = match Server::new(server_url, None).await {
@@ -729,148 +731,122 @@ fn test_custom_header_is_serialized() {
 }
 
 #[test]
-fn test_suite_lifecycle_accumulates_results_and_shuts_down_server() {
+fn test_case_lifecycle_runs_hooks_per_request() -> TestResult {
   smol::block_on(async {
     use std::sync::{Arc, Mutex};
 
     let order = Arc::new(Mutex::new(Vec::new()));
     let urls = Arc::new(Mutex::new(Vec::new()));
 
-    let suite = TestSuite {
-      before: Some(Box::new({
-        let order = Arc::clone(&order);
-        move || {
-          let order = Arc::clone(&order);
-          Box::pin(async move {
-            order.lock().unwrap().push("before");
-            Ok(())
-          })
-        }
-      })),
-      before_each: Some(Box::new({
-        let order = Arc::clone(&order);
-        move || {
-          let order = Arc::clone(&order);
-          Box::pin(async move {
-            order.lock().unwrap().push("before_each");
-            Ok(())
-          })
-        }
-      })),
-      tests: vec![
-        NamedTest {
-          name: "one",
-          test: Box::new({
-            let order = Arc::clone(&order);
-            let urls = Arc::clone(&urls);
-            move || {
-              let order = Arc::clone(&order);
-              let urls = Arc::clone(&urls);
-              Box::pin(async move {
-                order.lock().unwrap().push("test_1");
-                urls
-                  .lock()
-                  .unwrap()
-                  .push(httpageboy::test_utils::active_test_server_url().to_string());
-                run_test(b"GET /test HTTP/1.1\r\n\r\n", b"get", None).await.map(|_| ())
-              })
-            }
-          }),
-        },
-        NamedTest {
-          name: "two",
-          test: Box::new({
-            let order = Arc::clone(&order);
-            let urls = Arc::clone(&urls);
-            move || {
-              let order = Arc::clone(&order);
-              let urls = Arc::clone(&urls);
-              Box::pin(async move {
-                order.lock().unwrap().push("test_2");
-                urls
-                  .lock()
-                  .unwrap()
-                  .push(httpageboy::test_utils::active_test_server_url().to_string());
-                Err(TestError::new("controlled failure"))
-              })
-            }
-          }),
-        },
-        NamedTest {
-          name: "three",
-          test: Box::new({
-            let order = Arc::clone(&order);
-            let urls = Arc::clone(&urls);
-            move || {
-              let order = Arc::clone(&order);
-              let urls = Arc::clone(&urls);
-              Box::pin(async move {
-                order.lock().unwrap().push("test_3");
-                urls
-                  .lock()
-                  .unwrap()
-                  .push(httpageboy::test_utils::active_test_server_url().to_string());
-                run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None).await.map(|_| ())
-              })
-            }
-          }),
-        },
-      ],
-      after_each: Some(Box::new({
-        let order = Arc::clone(&order);
-        move || {
-          let order = Arc::clone(&order);
-          Box::pin(async move {
-            order.lock().unwrap().push("after_each");
-            Ok(())
-          })
-        }
-      })),
-      after: Some(Box::new({
-        let order = Arc::clone(&order);
-        move || {
-          let order = Arc::clone(&order);
-          Box::pin(async move {
-            order.lock().unwrap().push("after");
-            Ok(())
-          })
-        }
-      })),
-    };
+    test_case! {
+      before {
+        order.lock().unwrap().push("before");
+        setup_test_server(Some(SUITE_SERVER_URL), || common_server_definition(SUITE_SERVER_URL)).await?;
+      }
+      before_each {
+        order.lock().unwrap().push("before_each");
+      }
+      test |api| {
+        order.lock().unwrap().push("test_1");
+        urls
+          .lock()
+          .unwrap()
+          .push(httpageboy::test_utils::active_test_server_url().to_string());
+        api.run(b"GET /test HTTP/1.1\r\n\r\n", b"get").await?;
 
-    let result = run_test_suite(
-      Some(SUITE_SERVER_URL),
-      || common_server_definition(SUITE_SERVER_URL),
-      suite,
-    )
-    .await;
+        order.lock().unwrap().push("test_2");
+        urls
+          .lock()
+          .unwrap()
+          .push(httpageboy::test_utils::active_test_server_url().to_string());
+        api.run(b"GET / HTTP/1.1\r\n\r\n", b"home").await?;
+      }
+      after_each {
+        order.lock().unwrap().push("after_each");
+      }
+      after {
+        order.lock().unwrap().push("after");
+        shutdown_test_server(SUITE_SERVER_URL)?;
+      }
+    }?;
 
     assert_eq!(
       order.lock().unwrap().as_slice(),
       [
         "before",
-        "before_each",
         "test_1",
-        "after_each",
         "before_each",
+        "after_each",
         "test_2",
-        "after_each",
         "before_each",
-        "test_3",
         "after_each",
         "after",
       ]
     );
     let urls = urls.lock().unwrap().clone();
-    assert_eq!(urls.len(), 3);
+    assert_eq!(urls.len(), 2);
     assert!(urls.iter().all(|url| url == &urls[0]));
-    assert!(result.has_failures());
-    assert_eq!(result.failures().len(), 1);
-    assert!(matches!(
-      result.steps.iter().find(|step| step.result.is_err()).map(|step| &step.event),
-      Some(SuiteEvent::Test { test }) if test == "two"
-    ));
     assert!(!is_test_server_registered(SUITE_SERVER_URL));
     assert!(std::net::TcpListener::bind(SUITE_SERVER_URL).is_ok());
-  });
+    Ok(())
+  })
+}
+
+#[test]
+fn test_case_runs_cleanup_after_request_error() -> TestResult {
+  smol::block_on(async {
+    use std::sync::{Arc, Mutex};
+
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let result = test_case! {
+      before {
+        order.lock().unwrap().push("before");
+        setup_test_server(Some(SUITE_ERROR_SERVER_URL), || {
+          common_server_definition(SUITE_ERROR_SERVER_URL)
+        })
+        .await?;
+      }
+      before_each {
+        order.lock().unwrap().push("before_each");
+      }
+      test |t| {
+        order.lock().unwrap().push("test");
+        t.run(b"GET /test HTTP/1.1\r\n\r\n", b"missing").await?;
+        order.lock().unwrap().push("after_failed_request");
+      }
+      after_each {
+        order.lock().unwrap().push("after_each");
+      }
+      after {
+        order.lock().unwrap().push("after");
+        shutdown_test_server(SUITE_ERROR_SERVER_URL)?;
+      }
+    };
+
+    assert!(result.is_err());
+    assert_eq!(
+      order.lock().unwrap().as_slice(),
+      ["before", "test", "before_each", "after_each", "after"]
+    );
+    assert!(!is_test_server_registered(SUITE_ERROR_SERVER_URL));
+    Ok(())
+  })
+}
+
+#[test]
+fn test_case_accepts_only_test_block() -> TestResult {
+  smol::block_on(async {
+    let url = setup_test_server(Some(SUITE_MINIMAL_SERVER_URL), || {
+      common_server_definition(SUITE_MINIMAL_SERVER_URL)
+    })
+    .await?;
+    assert!(is_test_server_registered(url));
+    test_case! {
+      test |client| {
+        client.run(b"GET / HTTP/1.1\r\n\r\n", b"home").await?;
+      }
+    }?;
+    shutdown_test_server(SUITE_MINIMAL_SERVER_URL)?;
+    Ok(())
+  })
 }

@@ -60,16 +60,66 @@ Response {
 Test helpers live in `httpageboy::test_utils` and work the same for sync and async runtimes:
 - `setup_test_server(server_url, factory)` starts a server once per URL and marks it active (pass `None` to reuse the default `127.0.0.1:0` and let the OS pick a port).
 - `run_test(request, expected, target_url)` opens a TCP connection to the active server (or the URL you pass), writes a raw HTTP payload, and asserts the response contains the expected bytes.
+- `test_case!` groups ordered setup, one or more HTTP assertions, and cleanup while still using `cargo test` as the runner.
 
-Async tokio example mirroring the current helpers:
+Minimal sync lifecycle example:
+
+```rust
+#![cfg(feature = "sync")]
+use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
+use httpageboy::{handler, test_case, Request, Response, Rt, Server, StatusCode};
+
+const TEST_URL: &str = "127.0.0.1:0";
+
+fn server_factory() -> Server {
+  let mut server = Server::new(TEST_URL, 10, None).unwrap();
+  server.add_route("/", Rt::GET, handler!(home));
+  server
+}
+
+fn home(_req: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![("Content-Type".into(), "text/plain".into())],
+    body: b"home".to_vec(),
+  }
+}
+
+#[test]
+fn home_works() -> TestResult {
+  test_case! {
+    before {
+      setup_test_server(Some(TEST_URL), || server_factory())?;
+    }
+    before_each {
+      // Runs before each client.run(...).
+    }
+    test |client| {
+      client.run(b"GET / HTTP/1.1\r\n\r\n", b"200 OK")?;
+      client.run(b"GET / HTTP/1.1\r\n\r\n", b"home")?;
+    }
+    after_each {
+      // Runs after each client.run(...), even if that request fails.
+    }
+    after {
+      shutdown_test_server(TEST_URL)?;
+    }
+  }
+}
+```
+
+Minimal tokio lifecycle example:
 
 ```rust
 #![cfg(feature = "async_tokio")]
-use httpageboy::test_utils::{run_test, setup_test_server};
+use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
 use httpageboy::{handler, Request, Response, Rt, Server, StatusCode};
+use httpageboy::test_case;
+
+const TEST_URL: &str = "127.0.0.1:0";
 
 async fn server_factory() -> Server {
-  let mut server = Server::new("127.0.0.1:0", None).await.unwrap();
+  let mut server = Server::new(TEST_URL, None).await.unwrap();
   server.add_route("/", Rt::GET, handler!(home));
   server
 }
@@ -83,10 +133,19 @@ async fn home(_req: &Request) -> Response {
 }
 
 #[tokio::test]
-async fn test_home_ok() {
-  setup_test_server(None, || server_factory()).await;
-  let body = run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None).await;
-  assert!(body.contains("home"));
+async fn home_works() -> TestResult {
+  test_case! {
+    before {
+      setup_test_server(Some(TEST_URL), || server_factory()).await?;
+    }
+    test |client| {
+      client.run(b"GET / HTTP/1.1\r\n\r\n", b"200 OK").await?;
+      client.run(b"GET / HTTP/1.1\r\n\r\n", b"home").await?;
+    }
+    after {
+      shutdown_test_server(TEST_URL)?;
+    }
+  }
 }
 ```
 

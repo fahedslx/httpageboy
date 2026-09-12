@@ -1,9 +1,8 @@
 #![cfg(feature = "sync")]
 use httpageboy::test_utils::{
-  NamedTest, POOL_SIZE, SuiteEvent, TestError, TestResult, TestSuite, is_test_server_registered, run_test,
-  run_test_suite, setup_test_server,
+  POOL_SIZE, TestResult, is_test_server_registered, run_test, setup_test_server, shutdown_test_server,
 };
-use httpageboy::{Request, Response, Rt, Server, StatusCode, handler};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, handler, test_case};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -12,6 +11,8 @@ use std::time::Duration;
 const REGULAR_SERVER_URL: &str = "127.0.0.1:38080";
 const STRICT_SERVER_URL: &str = "127.0.0.1:38081";
 const SUITE_SERVER_URL: &str = "127.0.0.1:38082";
+const SUITE_ERROR_SERVER_URL: &str = "127.0.0.1:38083";
+const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:38084";
 
 fn common_server_definition(server_url: &str) -> Server {
   let mut server = Server::new(server_url, POOL_SIZE, None).expect("failed to bind test server");
@@ -619,118 +620,111 @@ fn test_custom_header_is_serialized() -> TestResult {
 }
 
 #[test]
-fn test_suite_lifecycle_accumulates_results_and_shuts_down_server() {
+fn test_case_lifecycle_runs_hooks_per_request() -> TestResult {
   use std::cell::RefCell;
   use std::rc::Rc;
 
   let order = Rc::new(RefCell::new(Vec::new()));
   let urls = Rc::new(RefCell::new(Vec::new()));
 
-  let suite = TestSuite {
-    before: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("before");
-        Ok(())
-      }
-    })),
-    before_each: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("before_each");
-        Ok(())
-      }
-    })),
-    tests: vec![
-      NamedTest {
-        name: "one",
-        test: Box::new({
-          let order = Rc::clone(&order);
-          let urls = Rc::clone(&urls);
-          move || {
-            order.borrow_mut().push("test_1");
-            urls
-              .borrow_mut()
-              .push(httpageboy::test_utils::active_test_server_url().to_string());
-            run_test(b"GET /test HTTP/1.1\r\n\r\n", b"get", None).map(|_| ())
-          }
-        }),
-      },
-      NamedTest {
-        name: "two",
-        test: Box::new({
-          let order = Rc::clone(&order);
-          let urls = Rc::clone(&urls);
-          move || {
-            order.borrow_mut().push("test_2");
-            urls
-              .borrow_mut()
-              .push(httpageboy::test_utils::active_test_server_url().to_string());
-            Err(TestError::new("controlled failure"))
-          }
-        }),
-      },
-      NamedTest {
-        name: "three",
-        test: Box::new({
-          let order = Rc::clone(&order);
-          let urls = Rc::clone(&urls);
-          move || {
-            order.borrow_mut().push("test_3");
-            urls
-              .borrow_mut()
-              .push(httpageboy::test_utils::active_test_server_url().to_string());
-            run_test(b"GET / HTTP/1.1\r\n\r\n", b"home", None).map(|_| ())
-          }
-        }),
-      },
-    ],
-    after_each: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("after_each");
-        Ok(())
-      }
-    })),
-    after: Some(Box::new({
-      let order = Rc::clone(&order);
-      move || {
-        order.borrow_mut().push("after");
-        Ok(())
-      }
-    })),
-  };
+  test_case! {
+    before {
+      order.borrow_mut().push("before");
+      setup_test_server(Some(SUITE_SERVER_URL), || common_server_definition(SUITE_SERVER_URL))?;
+    }
+    before_each {
+      order.borrow_mut().push("before_each");
+    }
+    test |api| {
+      order.borrow_mut().push("test_1");
+      urls
+        .borrow_mut()
+        .push(httpageboy::test_utils::active_test_server_url().to_string());
+      api.run(b"GET /test HTTP/1.1\r\n\r\n", b"get")?;
 
-  let result = run_test_suite(
-    Some(SUITE_SERVER_URL),
-    || common_server_definition(SUITE_SERVER_URL),
-    suite,
-  );
+      order.borrow_mut().push("test_2");
+      urls
+        .borrow_mut()
+        .push(httpageboy::test_utils::active_test_server_url().to_string());
+      api.run(b"GET / HTTP/1.1\r\n\r\n", b"home")?;
+    }
+    after_each {
+      order.borrow_mut().push("after_each");
+    }
+    after {
+      order.borrow_mut().push("after");
+      shutdown_test_server(SUITE_SERVER_URL)?;
+    }
+  }?;
 
   assert_eq!(
     order.borrow().as_slice(),
     [
       "before",
-      "before_each",
       "test_1",
-      "after_each",
       "before_each",
+      "after_each",
       "test_2",
-      "after_each",
       "before_each",
-      "test_3",
       "after_each",
       "after",
     ]
   );
-  assert_eq!(urls.borrow().len(), 3);
+  assert_eq!(urls.borrow().len(), 2);
   assert!(urls.borrow().iter().all(|url| url == &urls.borrow()[0]));
-  assert!(result.has_failures());
-  assert_eq!(result.failures().len(), 1);
-  assert!(matches!(
-    result.steps.iter().find(|step| step.result.is_err()).map(|step| &step.event),
-    Some(SuiteEvent::Test { test }) if test == "two"
-  ));
   assert!(!is_test_server_registered(SUITE_SERVER_URL));
   assert!(std::net::TcpListener::bind(SUITE_SERVER_URL).is_ok());
+  Ok(())
+}
+
+#[test]
+fn test_case_runs_cleanup_after_request_error() -> TestResult {
+  use std::cell::RefCell;
+  use std::rc::Rc;
+
+  let order = Rc::new(RefCell::new(Vec::new()));
+  let result = test_case! {
+    before {
+      order.borrow_mut().push("before");
+      setup_test_server(Some(SUITE_ERROR_SERVER_URL), || common_server_definition(SUITE_ERROR_SERVER_URL))?;
+    }
+    before_each {
+      order.borrow_mut().push("before_each");
+    }
+    test |t| {
+      order.borrow_mut().push("test");
+      t.run(b"GET /test HTTP/1.1\r\n\r\n", b"missing")?;
+      order.borrow_mut().push("after_failed_request");
+    }
+    after_each {
+      order.borrow_mut().push("after_each");
+    }
+    after {
+      order.borrow_mut().push("after");
+      shutdown_test_server(SUITE_ERROR_SERVER_URL)?;
+    }
+  };
+
+  assert!(result.is_err());
+  assert_eq!(
+    order.borrow().as_slice(),
+    ["before", "test", "before_each", "after_each", "after"]
+  );
+  assert!(!is_test_server_registered(SUITE_ERROR_SERVER_URL));
+  Ok(())
+}
+
+#[test]
+fn test_case_accepts_only_test_block() -> TestResult {
+  let url = setup_test_server(Some(SUITE_MINIMAL_SERVER_URL), || {
+    common_server_definition(SUITE_MINIMAL_SERVER_URL)
+  })?;
+  assert!(is_test_server_registered(url));
+  test_case! {
+    test |client| {
+      client.run(b"GET / HTTP/1.1\r\n\r\n", b"home")?;
+    }
+  }?;
+  shutdown_test_server(SUITE_MINIMAL_SERVER_URL)?;
+  Ok(())
 }
