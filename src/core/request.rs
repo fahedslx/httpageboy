@@ -18,7 +18,7 @@ macro_rules! create_async_parse_stream {
         $(#[$outer])*
         pub async fn $func_name(
             stream: &mut $stream_ty,
-            routes: &std::collections::HashMap<(crate::core::request_type::Rt, String), std::sync::Arc<dyn crate::core::handler::Handler>>,
+            routes: &std::collections::HashMap<(crate::core::request_type::Rt, String), crate::core::route::RouteEntry>,
             file_bases: &[String],
         ) -> (crate::core::request::Request, Option<crate::core::response::Response>) {
             use $async_read_ext;
@@ -253,7 +253,7 @@ fn extract_body_headers(raw: &str) -> (usize, bool) {
   feature = "async_std",
   feature = "async_smol"
 ))]
-use std::sync::Arc<dyn crate::core::handler::Handler>;
+use crate::core::route::RouteEntry;
 #[cfg(any(
   feature = "sync",
   feature = "async_tokio",
@@ -376,10 +376,27 @@ impl Request {
       .map(|(_, v)| v.as_str())
   }
 
+  pub(crate) fn upgrade_handler(
+    &self,
+    routes: &HashMap<(Rt, String), RouteEntry>,
+  ) -> Option<std::sync::Arc<dyn crate::core::upgrade::UpgradeHandler>> {
+    if let Some(entry) = routes.get(&(self.method.clone(), self.path.clone())) {
+      return entry.upgrade.clone();
+    }
+
+    for ((method, route_path), entry) in routes {
+      if *method == self.method && !Self::extract_params(route_path, &self.path).is_empty() {
+        return entry.upgrade.clone();
+      }
+    }
+
+    None
+  }
+
   #[cfg(feature = "sync")]
   pub fn parse_stream_sync(
     stream: &TcpStream,
-    routes: &HashMap<(Rt, String), Arc<dyn Handler>>,
+    routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
   ) -> (Self, Option<Response>) {
     use std::io::{BufRead, BufReader, Read};
@@ -459,7 +476,7 @@ impl Request {
   #[cfg(feature = "sync")]
   pub fn parse_raw_sync(
     raw: String,
-    routes: &HashMap<(Rt, String), Arc<dyn Handler>>,
+    routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
   ) -> (Self, Option<Response>) {
     if raw.trim().is_empty() {
@@ -528,7 +545,7 @@ impl Request {
   #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
   pub async fn parse_raw_async(
     raw: String,
-    routes: &HashMap<(Rt, String), Arc<dyn Handler>>,
+    routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
   ) -> (Self, Option<Response>) {
     if raw.trim().is_empty() {
@@ -595,7 +612,7 @@ impl Request {
     (req, early)
   }
 
-  fn parse_raw_only(raw: String, routes: &HashMap<(Rt, String), Arc<dyn Handler>>) -> Self {
+  fn parse_raw_only(raw: String, routes: &HashMap<(Rt, String), RouteEntry>) -> Self {
     let lines: Vec<&str> = raw.split("\r\n").collect();
     let mut cut = 0;
     for (i, &l) in lines.iter().enumerate() {
@@ -648,11 +665,11 @@ impl Request {
   }
 
   #[cfg(feature = "sync")]
-  pub fn route_sync(&mut self, routes: &HashMap<(Rt, String), Arc<dyn Handler>>, file_bases: &[String]) -> Option<Response> {
-    if let Some(handler) = routes.get(&(self.method.clone(), self.path.clone())) {
-      return Some(futures::executor::block_on(handler.handle(self)));
+  pub fn route_sync(&mut self, routes: &HashMap<(Rt, String), RouteEntry>, file_bases: &[String]) -> Option<Response> {
+    if let Some(entry) = routes.get(&(self.method.clone(), self.path.clone())) {
+      return Some(futures::executor::block_on(entry.handler.handle(self)));
     }
-    for ((m, rp), handler) in routes {
+    for ((m, rp), entry) in routes {
       if *m == self.method {
         let path_p = Self::extract_params(rp, &self.path);
         if !path_p.is_empty() {
@@ -664,7 +681,7 @@ impl Request {
             merged.insert(k, v);
           }
           self.params = merged;
-          return Some(futures::executor::block_on(handler.handle(self)));
+          return Some(futures::executor::block_on(entry.handler.handle(self)));
         }
       }
     }
@@ -675,11 +692,11 @@ impl Request {
   }
 
   #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
-  pub async fn route_async(&mut self, routes: &HashMap<(Rt, String), Arc<dyn Handler>>, file_bases: &[String]) -> Option<Response> {
-    if let Some(handler) = routes.get(&(self.method.clone(), self.path.clone())) {
-      return Some(handler.handle(self).await);
+  pub async fn route_async(&mut self, routes: &HashMap<(Rt, String), RouteEntry>, file_bases: &[String]) -> Option<Response> {
+    if let Some(entry) = routes.get(&(self.method.clone(), self.path.clone())) {
+      return Some(entry.handler.handle(self).await);
     }
-    for ((m, rp), handler) in routes {
+    for ((m, rp), entry) in routes {
       if *m == self.method {
         let path_p = Self::extract_params(rp, &self.path);
         if !path_p.is_empty() {
@@ -691,7 +708,7 @@ impl Request {
             merged.insert(k, v);
           }
           self.params = merged;
-          return Some(handler.handle(self).await);
+          return Some(entry.handler.handle(self).await);
         }
       }
     }
@@ -781,7 +798,7 @@ impl Display for Request {
 #[cfg(feature = "sync")]
 pub fn handle_request_sync(
   req: &mut Request,
-  routes: &HashMap<(Rt, String), Arc<dyn Handler>>,
+  routes: &HashMap<(Rt, String), RouteEntry>,
   file_bases: &[String],
 ) -> Option<Response> {
   req.route_sync(routes, file_bases)
@@ -790,7 +807,7 @@ pub fn handle_request_sync(
 #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
 pub async fn handle_request_async(
   req: &mut Request,
-  routes: &HashMap<(Rt, String), Arc<dyn Handler>>,
+  routes: &HashMap<(Rt, String), RouteEntry>,
   file_bases: &[String],
 ) -> Option<Response> {
   req.route_async(routes, file_bases).await

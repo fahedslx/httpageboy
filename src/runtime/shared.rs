@@ -34,16 +34,29 @@ where
 }
 
 pub fn response_head(response: &Response, close: bool, cors: Option<&CorsPolicy>, origin: Option<&str>) -> String {
-  let connection_header = if close { "Connection: close\r\n" } else { "" };
+  let switching_protocols = response.status.starts_with("101 ");
+  let mut has_connection = false;
   let mut header = format!("HTTP/1.1 {}\r\n", response.status);
+
   for (key, value) in &response.headers {
-    if key.eq_ignore_ascii_case("content-length") || key.eq_ignore_ascii_case("connection") {
+    if key.eq_ignore_ascii_case("content-length") {
       continue;
+    }
+    if key.eq_ignore_ascii_case("connection") {
+      has_connection = true;
+      if close {
+        continue;
+      }
     }
     header.push_str(&format!("{}: {}\r\n", key, value));
   }
-  header.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
-  header.push_str(connection_header);
+
+  if !switching_protocols {
+    header.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
+  }
+  if close && !has_connection {
+    header.push_str("Connection: close\r\n");
+  }
   if let Some(policy) = cors {
     for (key, value) in policy.header_lines(origin) {
       header.push_str(&format!("{}: {}\r\n", key, value));

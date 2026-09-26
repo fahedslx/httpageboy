@@ -3,7 +3,7 @@
 use crate::core::cors::CorsPolicy;
 use crate::core::request::{Request, handle_request_sync};
 use crate::core::request_type::Rt;
-use crate::core::route::Route;
+use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
 use crate::runtime::shared::{file_source_path, print_server_info, response_head, response_or_default};
 use crate::runtime::sync::threadpool::ThreadPool;
@@ -19,7 +19,7 @@ pub struct Server {
   url: String,
   listener: TcpListener,
   pool: Arc<Mutex<ThreadPool>>,
-  routes: HashMap<(Rt, String), Arc<dyn crate::core::handler::Handler>>,
+  routes: HashMap<(Rt, String), RouteEntry>,
   files_sources: Vec<String>,
   auto_close: bool,
   cors: Option<Arc<CorsPolicy>>,

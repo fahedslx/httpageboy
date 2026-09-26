@@ -1,6 +1,6 @@
 [package]
 name = "httpageboy"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 authors = ["fahedsl <fahedsl@yandex.com>"]
 description = "A lightweight library for handling raw HTTP request/response transmission. Good base for APIs. Supports both synchronous and asynchronous programming models."

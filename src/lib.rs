@@ -10,7 +10,7 @@ pub use crate::core::{cors::CorsPolicy, request_type::Rt, response::Response, st
   feature = "async_std",
   feature = "async_smol"
 ))]
-pub use crate::core::{request::Request, route::Route};
+pub use crate::core::{request::Request, route::Route, upgrade::{Connection, UpgradeHandler}};
 
 pub mod runtime {
   #[cfg(feature = "sync")]
