@@ -114,6 +114,7 @@ impl Server {
       let (mut req, early) = crate::core::request::parse_stream_smol(&mut stream, &routes, &files).await;
       let origin = req.origin().map(str::to_string);
       let method = req.method.clone();
+      let upgrade = req.upgrade_handler(&routes);
       let resp = match early {
         Some(r) => r,
         None => {
@@ -121,6 +122,21 @@ impl Server {
           response_or_default(routed, &method, cors_policy.as_deref())
         }
       };
+      if resp.status.starts_with("101 ") {
+        if let Some(upgrade) = upgrade {
+          shared::send_response(
+            &mut stream,
+            &resp,
+            false,
+            cors_policy.as_deref(),
+            origin.as_deref(),
+          )
+          .await;
+          upgrade.handle(req, stream).await;
+          return;
+        }
+      }
+
       shared::send_response(
         &mut stream,
         &resp,
