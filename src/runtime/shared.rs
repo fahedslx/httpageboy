@@ -43,10 +43,10 @@ pub fn response_head(response: &Response, close: bool, cors: Option<&CorsPolicy>
       continue;
     }
     if key.eq_ignore_ascii_case("connection") {
-      has_connection = true;
       if close {
         continue;
       }
+      has_connection = true;
     }
     header.push_str(&format!("{}: {}\r\n", key, value));
   }
@@ -54,7 +54,7 @@ pub fn response_head(response: &Response, close: bool, cors: Option<&CorsPolicy>
   if !switching_protocols {
     header.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
   }
-  if close && !has_connection {
+  if close {
     header.push_str("Connection: close\r\n");
   }
   if let Some(policy) = cors {

@@ -11,7 +11,8 @@ use crate::core::upgrade::UpgradeHandler;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub(crate) struct RouteEntry {
+#[doc(hidden)]
+pub struct RouteEntry {
   pub handler: Arc<dyn Handler>,
   pub upgrade: Option<Arc<dyn UpgradeHandler>>,
 }
