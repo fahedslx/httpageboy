@@ -49,6 +49,50 @@ async fn demo_get(_request: &Request) -> Response {
   }
 }
 
+
+#[cfg(any(
+  feature = "sync",
+  feature = "async_tokio",
+  feature = "async_std",
+  feature = "async_smol"
+))]
+fn query_response(request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![("Content-Type".into(), "text/plain".into())],
+    body: format!("QUERY: {}", request.body).into_bytes(),
+  }
+}
+
+#[cfg(feature = "sync")]
+fn demo_query(request: &Request) -> Response {
+  query_response(request)
+}
+
+#[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
+async fn demo_query(request: &Request) -> Response {
+  query_response(request)
+}
+
+#[cfg(any(
+  feature = "sync",
+  feature = "async_tokio",
+  feature = "async_std",
+  feature = "async_smol"
+))]
+fn configure_server(server: &mut Server) {
+  server.routes([
+    // openapi: PageBoy example
+    // response: 200 HTML example
+    route!("/", Rt::GET, demo_get),
+    // openapi: Safe query with request content
+    // request: string
+    // response: 200 Query result
+    route!("/query", Rt::QUERY, demo_query),
+  ]);
+  server.add_files_source("res");
+}
+
 // SYNC
 #[cfg(feature = "sync")]
 fn main() {
@@ -56,8 +100,7 @@ fn main() {
   let threads_number: u8 = 10;
 
   let mut server = Server::new(serving_url, threads_number).unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
-  server.add_files_source("res");
+  configure_server(&mut server);
   server.run();
 }
 
@@ -68,8 +111,7 @@ async fn main() {
   let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url).await.unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
-  server.add_files_source("res");
+  configure_server(&mut server);
   server.run().await;
 }
 
@@ -80,8 +122,7 @@ async fn main() {
   let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url).await.unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
-  server.add_files_source("res");
+  configure_server(&mut server);
   server.run().await;
 }
 
@@ -106,8 +147,7 @@ async fn run_smol() {
   let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url).await.unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
-  server.add_files_source("res");
+  configure_server(&mut server);
   server.run().await;
 }
 

@@ -75,3 +75,28 @@ pub fn response_or_default(response: Option<Response>, method: &RequestType, cor
   }
   Response::new()
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::StatusCode;
+
+  #[test]
+  fn switching_protocols_preserves_upgrade_headers_without_content_length() {
+    let response = Response {
+      status: StatusCode::SwitchingProtocols.to_string(),
+      headers: vec![
+        ("Upgrade".into(), "websocket".into()),
+        ("Connection".into(), "Upgrade".into()),
+      ],
+      body: Vec::new(),
+    };
+
+    let head = response_head(&response, false, None, None);
+
+    assert!(head.contains("HTTP/1.1 101 Switching Protocols"));
+    assert!(head.contains("Upgrade: websocket"));
+    assert!(head.contains("Connection: Upgrade"));
+    assert!(!head.contains("Content-Length"));
+  }
+}

@@ -43,8 +43,11 @@ server.routes([
   route!("/", Rt::GET, home),
   route!("/users", Rt::GET, list_users),
   route!("/users", Rt::POST, create_user),
+  route!("/search", Rt::QUERY, search),
 ]);
 ```
+
+`QUERY` is supported as defined by RFC 10008 and may carry request content while remaining safe and idempotent.
 
 ## Protocol extensions
 
@@ -199,7 +202,7 @@ Preflights (OPTIONS) are answered automatically using the active policy.
 
 ## OpenAPI helper
 
-`cargo openapi` generates OpenAPI directly from implemented `route!(...)` entries. Put `// openapi:` comments immediately above the route they describe. It is dependency-free and works offline.
+`cargo openapi` generates OpenAPI 3.2.1 directly from implemented `route!(...)` entries. Put `// openapi:` comments immediately above the route they describe. It is dependency-free and works offline.
 
 ```rust
 server.routes([

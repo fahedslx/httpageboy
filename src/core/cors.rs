@@ -14,7 +14,7 @@ impl Default for CorsPolicy {
   fn default() -> Self {
     CorsPolicy {
       allow_origin: "*".to_string(),
-      allow_methods: "GET,POST,PUT,DELETE,OPTIONS".to_string(),
+      allow_methods: "GET,POST,PUT,DELETE,HEAD,OPTIONS,CONNECT,PATCH,TRACE,QUERY".to_string(),
       allow_headers: "Content-Type, Authorization".to_string(),
       allow_credentials: false,
       max_age_seconds: Some(600),
@@ -78,5 +78,16 @@ impl CorsPolicy {
       headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
       body: Vec::new(),
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn default_methods_include_query() {
+    let policy = CorsPolicy::default();
+    assert!(policy.allow_methods.split(',').any(|method| method == "QUERY"));
   }
 }
