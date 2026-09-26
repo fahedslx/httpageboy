@@ -649,10 +649,10 @@ impl Request {
 
   #[cfg(feature = "sync")]
   pub fn route_sync(&mut self, routes: &HashMap<(Rt, String), Arc<dyn Handler>>, file_bases: &[String]) -> Option<Response> {
-    if let Some(rh) = routes.get(&(self.method.clone(), self.path.clone())) {
-      return Some(futures::executor::block_on(rh.handle(self)));
+    if let Some(handler) = routes.get(&(self.method.clone(), self.path.clone())) {
+      return Some(futures::executor::block_on(handler.handle(self)));
     }
-    for ((m, rp), rh) in routes {
+    for ((m, rp), handler) in routes {
       if *m == self.method {
         let path_p = Self::extract_params(rp, &self.path);
         if !path_p.is_empty() {
@@ -664,7 +664,7 @@ impl Request {
             merged.insert(k, v);
           }
           self.params = merged;
-          return Some(futures::executor::block_on(rh.handle(self)));
+          return Some(futures::executor::block_on(handler.handle(self)));
         }
       }
     }
@@ -676,10 +676,10 @@ impl Request {
 
   #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
   pub async fn route_async(&mut self, routes: &HashMap<(Rt, String), Arc<dyn Handler>>, file_bases: &[String]) -> Option<Response> {
-    if let Some(rh) = routes.get(&(self.method.clone(), self.path.clone())) {
-      return Some(rh.handle(self).await);
+    if let Some(handler) = routes.get(&(self.method.clone(), self.path.clone())) {
+      return Some(handler.handle(self).await);
     }
-    for ((m, rp), rh) in routes {
+    for ((m, rp), handler) in routes {
       if *m == self.method {
         let path_p = Self::extract_params(rp, &self.path);
         if !path_p.is_empty() {
@@ -691,7 +691,7 @@ impl Request {
             merged.insert(k, v);
           }
           self.params = merged;
-          return Some(rh.handle(self).await);
+          return Some(handler.handle(self).await);
         }
       }
     }

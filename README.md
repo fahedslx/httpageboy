@@ -77,7 +77,7 @@ Minimal sync lifecycle example:
 ```rust
 #![cfg(feature = "sync")]
 use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
-use httpageboy::{handler, test_case, Request, Response, Rt, Server, StatusCode};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
 
 const TEST_URL: &str = "127.0.0.1:0";
 
@@ -123,8 +123,7 @@ Minimal tokio lifecycle example:
 ```rust
 #![cfg(feature = "async_tokio")]
 use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
-use httpageboy::{handler, Request, Response, Rt, Server, StatusCode};
-use httpageboy::test_case;
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
 
 const TEST_URL: &str = "127.0.0.1:0";
 

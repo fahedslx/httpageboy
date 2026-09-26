@@ -3,7 +3,7 @@
 use httpageboy::test_utils::{
   TestResult, is_test_server_registered, run_test, setup_test_server, shutdown_test_server,
 };
-use httpageboy::{route, Request, Response, Rt, Server, StatusCode, route, test_case};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
 use std::collections::BTreeMap;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:48080";
