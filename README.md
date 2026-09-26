@@ -46,6 +46,32 @@ server.routes([
 ]);
 ```
 
+## Protocol extensions
+
+PageBoy can hand a routed HTTP connection to a separate protocol crate without implementing that protocol itself.
+
+WSPageboy uses this hook for WebSocket:
+
+```toml
+[dependencies]
+httpageboy = { version = "2.1.0", features = ["async_tokio"] }
+wspageboy = { version = "0.1.0", features = ["async_tokio"] }
+```
+
+```rust
+use httpageboy::{route, Rt, Server};
+use wspageboy::WebSocket;
+
+server.routes([
+  route!("/api", Rt::GET, api),
+  route!("/ws", Rt::GET, socket, WebSocket),
+]);
+```
+
+The fourth argument is supplied by the extension crate. PageBoy handles the HTTP request and only hands over the connection after the extension returns `101 Switching Protocols`.
+
+Use the matching feature in both crates: `sync`, `async_tokio`, `async_std`, or `async_smol`. PageBoy does not depend on WSPageboy.
+
 Response now supports arbitrary headers:
 
 ```rust
