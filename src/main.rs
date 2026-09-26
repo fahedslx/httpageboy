@@ -49,6 +49,31 @@ async fn demo_get(_request: &Request) -> Response {
   }
 }
 
+
+#[cfg(any(
+  feature = "sync",
+  feature = "async_tokio",
+  feature = "async_std",
+  feature = "async_smol"
+))]
+fn query_response(request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![("Content-Type".into(), "text/plain".into())],
+    body: format!("QUERY: {}", request.body).into_bytes(),
+  }
+}
+
+#[cfg(feature = "sync")]
+fn demo_query(request: &Request) -> Response {
+  query_response(request)
+}
+
+#[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
+async fn demo_query(request: &Request) -> Response {
+  query_response(request)
+}
+
 // SYNC
 #[cfg(feature = "sync")]
 fn main() {
@@ -56,7 +81,10 @@ fn main() {
   let threads_number: u8 = 10;
 
   let mut server = Server::new(serving_url, threads_number).unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
+  server.routes([
+    route!("/", Rt::GET, demo_get),
+    route!("/query", Rt::QUERY, demo_query),
+  ]);
   server.add_files_source("res");
   server.run();
 }
@@ -68,7 +96,10 @@ async fn main() {
   let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url).await.unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
+  server.routes([
+    route!("/", Rt::GET, demo_get),
+    route!("/query", Rt::QUERY, demo_query),
+  ]);
   server.add_files_source("res");
   server.run().await;
 }
@@ -80,7 +111,10 @@ async fn main() {
   let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url).await.unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
+  server.routes([
+    route!("/", Rt::GET, demo_get),
+    route!("/query", Rt::QUERY, demo_query),
+  ]);
   server.add_files_source("res");
   server.run().await;
 }
@@ -106,7 +140,10 @@ async fn run_smol() {
   let serving_url: &str = "0.0.0.0:7878";
 
   let mut server = Server::new(serving_url).await.unwrap();
-  server.routes([route!("/", Rt::GET, demo_get)]);
+  server.routes([
+    route!("/", Rt::GET, demo_get),
+    route!("/query", Rt::QUERY, demo_query),
+  ]);
   server.add_files_source("res");
   server.run().await;
 }

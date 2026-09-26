@@ -14,7 +14,7 @@ impl Default for CorsPolicy {
   fn default() -> Self {
     CorsPolicy {
       allow_origin: "*".to_string(),
-      allow_methods: "GET,POST,PUT,DELETE,OPTIONS".to_string(),
+      allow_methods: "GET,POST,PUT,DELETE,HEAD,OPTIONS,CONNECT,PATCH,TRACE,QUERY".to_string(),
       allow_headers: "Content-Type, Authorization".to_string(),
       allow_credentials: false,
       max_age_seconds: Some(600),

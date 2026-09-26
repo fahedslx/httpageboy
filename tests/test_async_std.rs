@@ -32,6 +32,7 @@ async fn common_server_definition(server_url: &str) -> Server {
     route!("/test", Rt::OPTIONS, demo_handle_options),
     route!("/test", Rt::CONNECT, demo_handle_connect),
     route!("/test", Rt::TRACE, demo_handle_trace),
+    route!("/query", Rt::QUERY, demo_handle_query),
     route!("/redirect", Rt::GET, demo_handle_redirect),
     route!("/json", Rt::GET, demo_handle_json),
     route!("/custom-header", Rt::GET, demo_handle_custom_header),
@@ -160,6 +161,14 @@ async fn demo_handle_trace(_request: &Request) -> Response {
     status: StatusCode::Ok.to_string(),
     headers: vec![],
     body: b"trace".to_vec(),
+  }
+}
+
+async fn demo_handle_query(request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![],
+    body: format!("query:{}", request.body).into_bytes(),
   }
 }
 
@@ -433,6 +442,15 @@ async fn test_trace() {
   boot_regular().await;
   let request = b"TRACE /test HTTP/1.1\r\n\r\n";
   let expected = b"trace";
+  async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
+}
+
+#[async_std::test]
+async fn test_query_with_body() {
+  boot_regular().await;
+  let request = b"QUERY /query HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
+  let expected = b"query:hello";
   async_std::task::sleep(std::time::Duration::from_millis(100)).await;
   run_regular(request, expected).await;
 }

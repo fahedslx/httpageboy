@@ -291,7 +291,7 @@ fn emit_openapi(routes: &[RouteDoc]) -> String {
   let server = env::var("OPENAPI_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1".to_string());
 
   let mut out = vec![
-    "openapi: 3.0.3".to_string(),
+    "openapi: 3.2.1".to_string(),
     "info:".to_string(),
     format!("  title: {}", quote(&title)),
     format!("  version: {}", quote(&version)),
@@ -425,6 +425,25 @@ mod tests {
     assert_eq!(route.handler, "get_user");
     assert_eq!(route.headers, vec!["user-token".to_string()]);
     assert_eq!(route.permission, Some("users.read".to_string()));
+  }
+
+  #[test]
+  fn emits_query_operation() {
+    let route = RouteDoc {
+      method: "query".to_string(),
+      path: "/search".to_string(),
+      handler: "search".to_string(),
+      summary: "Search".to_string(),
+      headers: Vec::new(),
+      permission: None,
+      request_body: Some("json".to_string()),
+      responses: Vec::new(),
+    };
+
+    let output = emit_openapi(&[route]);
+
+    assert!(output.contains("openapi: 3.2.1"));
+    assert!(output.contains("    query:"));
   }
 
   #[test]

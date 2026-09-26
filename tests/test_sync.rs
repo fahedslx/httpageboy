@@ -29,6 +29,7 @@ fn common_server_definition(server_url: &str) -> Server {
     route!("/test", Rt::OPTIONS, demo_handle_options),
     route!("/test", Rt::CONNECT, demo_handle_connect),
     route!("/test", Rt::TRACE, demo_handle_trace),
+    route!("/query", Rt::QUERY, demo_handle_query),
     route!("/redirect", Rt::GET, demo_handle_redirect),
     route!("/json", Rt::GET, demo_handle_json),
     route!("/custom-header", Rt::GET, demo_handle_custom_header),
@@ -156,6 +157,14 @@ fn demo_handle_trace(_request: &Request) -> Response {
     status: StatusCode::Ok.to_string(),
     headers: vec![],
     body: "trace".as_bytes().to_vec(),
+  }
+}
+
+fn demo_handle_query(request: &Request) -> Response {
+  Response {
+    status: StatusCode::Ok.to_string(),
+    headers: vec![],
+    body: format!("query:{}", request.body).into_bytes(),
   }
 }
 
@@ -430,6 +439,14 @@ fn test_trace() {
   boot_regular();
   let request = b"TRACE /test HTTP/1.1\r\n\r\n";
   let expected_response = b"trace";
+  run_regular(request, expected_response);
+}
+
+#[test]
+fn test_query_with_body() {
+  boot_regular();
+  let request = b"QUERY /query HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
+  let expected_response = b"query:hello";
   run_regular(request, expected_response);
 }
 
