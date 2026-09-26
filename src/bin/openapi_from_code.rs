@@ -175,10 +175,7 @@ fn parse_file(path: &Path) -> Result<Vec<RouteDoc>, String> {
       continue;
     }
 
-    if let Some(comment) = trimmed
-      .strip_prefix("///")
-      .or_else(|| trimmed.strip_prefix("//"))
-    {
+    if let Some(comment) = trimmed.strip_prefix("///").or_else(|| trimmed.strip_prefix("//")) {
       comments.push(comment.trim().to_string());
       continue;
     }
