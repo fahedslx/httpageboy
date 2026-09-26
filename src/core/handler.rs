@@ -18,14 +18,6 @@ pub trait Handler: Send + Sync {
   async fn handle(&self, request: &Request) -> Response;
 }
 
-// Blanket implementation for Arc<dyn Handler> for convenience.
-#[async_trait]
-impl Handler for Arc<dyn Handler> {
-  async fn handle(&self, request: &Request) -> Response {
-    (**self).handle(request).await
-  }
-}
-
 // Internal adapters used by route!.
 
 // Wraps a synchronous route function.
