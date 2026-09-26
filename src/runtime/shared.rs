@@ -35,7 +35,6 @@ where
 
 pub fn response_head(response: &Response, close: bool, cors: Option<&CorsPolicy>, origin: Option<&str>) -> String {
   let switching_protocols = response.status.starts_with("101 ");
-  let mut has_connection = false;
   let mut header = format!("HTTP/1.1 {}\r\n", response.status);
 
   for (key, value) in &response.headers {
@@ -46,7 +45,6 @@ pub fn response_head(response: &Response, close: bool, cors: Option<&CorsPolicy>
       if close {
         continue;
       }
-      has_connection = true;
     }
     header.push_str(&format!("{}: {}\r\n", key, value));
   }
