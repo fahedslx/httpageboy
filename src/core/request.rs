@@ -639,12 +639,15 @@ impl Request {
     } else {
       None
     };
-    for (m, rp) in routes.keys() {
-      if *m == RequestType::from_str(parts[0]) {
-        for (k, v) in Self::extract_params(rp, &path) {
-          params.insert(k, v);
+    for (method, route_path) in routes.keys() {
+      if *method == RequestType::from_str(parts[0]) {
+        let path_params = Self::extract_params(route_path, &path);
+        if !path_params.is_empty() {
+          for (key, value) in path_params {
+            params.insert(key, value);
+          }
+          break;
         }
-        break;
       }
     }
     if let Some(qs) = query_opt {
