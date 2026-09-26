@@ -177,7 +177,7 @@ Preflights (OPTIONS) are answered automatically using the active policy.
 
 ## OpenAPI helper
 
-`cargo openapi` generates OpenAPI directly from implemented `server.add_route(...)` calls and the `// openapi:` comments placed immediately above each route. It is dependency-free and works offline.
+`cargo openapi` generates OpenAPI from implemented `route!(...)` entries and the existing `server.add_route(...)` form. Put `// openapi:` comments immediately above the route they describe. It is dependency-free and works offline.
 
 ```rust
 server.routes([
