@@ -3,7 +3,7 @@
 use crate::core::cors::CorsPolicy;
 use crate::core::request::{Request, handle_request_sync};
 use crate::core::request_type::Rt;
-use crate::core::route::Route;
+use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
 use crate::runtime::shared::{file_source_path, print_server_info, response_head, response_or_default};
 use crate::runtime::sync::threadpool::ThreadPool;
@@ -19,7 +19,7 @@ pub struct Server {
   url: String,
   listener: TcpListener,
   pool: Arc<Mutex<ThreadPool>>,
-  routes: HashMap<(Rt, String), Arc<dyn crate::core::handler::Handler>>,
+  routes: HashMap<(Rt, String), RouteEntry>,
   files_sources: Vec<String>,
   auto_close: bool,
   cors: Option<Arc<CorsPolicy>>,
@@ -123,21 +123,38 @@ impl Server {
     let cors_policy = self.cors.clone();
     let pool = Arc::clone(&self.pool);
     pool.lock().unwrap().run(move || {
+      let mut stream = stream;
       let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local);
       let origin = request.origin().map(str::to_string);
       let method = request.method.clone();
+      let upgrade = request.upgrade_handler(&routes_local);
       let response = if let Some(resp) = early_resp {
         resp
       } else {
         let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
         response_or_default(routed, &method, cors_policy.as_deref())
       };
-      Self::send_response(stream, &response, close_flag, cors_policy.as_deref(), origin.as_deref())
+
+      if response.status.starts_with("101 ") {
+        if let Some(upgrade) = upgrade {
+          Self::send_response(&mut stream, &response, false, cors_policy.as_deref(), origin.as_deref());
+          futures::executor::block_on(upgrade.handle(request, stream));
+          return;
+        }
+      }
+
+      Self::send_response(
+        &mut stream,
+        &response,
+        close_flag,
+        cors_policy.as_deref(),
+        origin.as_deref(),
+      );
     });
   }
 
   fn send_response(
-    mut stream: TcpStream,
+    stream: &mut TcpStream,
     response: &Response,
     close: bool,
     cors: Option<&CorsPolicy>,

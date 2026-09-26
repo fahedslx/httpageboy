@@ -1,7 +1,6 @@
 use crate::core::cors::CorsPolicy;
-use crate::core::handler::Handler;
 use crate::core::request_type::Rt;
-use crate::core::route::Route;
+use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
 use crate::runtime::shared as runtime_shared;
 use async_trait::async_trait;
@@ -40,7 +39,7 @@ pub async fn send_response<S: AsyncStream>(
 pub struct GenericServer<L> {
   pub listener: L,
   pub url: String,
-  pub routes: Arc<HashMap<(Rt, String), Arc<dyn Handler>>>,
+  pub routes: Arc<HashMap<(Rt, String), RouteEntry>>,
   pub files_sources: Arc<Vec<String>>,
   pub auto_close: bool,
   pub cors: Option<Arc<CorsPolicy>>,

@@ -5,5 +5,6 @@ pub mod request_type;
 pub mod route;
 pub mod response;
 pub mod status_code;
+pub mod upgrade;
 pub mod test_utils;
 pub mod utils;
