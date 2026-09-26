@@ -512,6 +512,17 @@ fn test_query_with_body() {
 }
 
 #[test]
+fn test_query_without_content_length() {
+  smol::block_on(async {
+    boot_regular().await;
+    let request = b"QUERY /query HTTP/1.1\r\n\r\nhello";
+    let expected = b"query:hello";
+    smol::Timer::after(std::time::Duration::from_millis(100)).await;
+    run_regular(request, expected).await;
+  });
+}
+
+#[test]
 fn test_delete() {
   smol::block_on(async {
     boot_regular().await;

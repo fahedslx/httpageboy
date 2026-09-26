@@ -451,6 +451,14 @@ fn test_query_with_body() {
 }
 
 #[test]
+fn test_query_without_content_length() {
+  boot_regular();
+  let request = b"QUERY /query HTTP/1.1\r\n\r\nhello";
+  let expected_response = b"query:hello";
+  run_regular(request, expected_response);
+}
+
+#[test]
 fn test_delete() {
   boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\n\r\n";
