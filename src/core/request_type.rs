@@ -13,6 +13,7 @@ pub enum RequestType {
   CONNECT,
   PATCH,
   TRACE,
+  QUERY,
 }
 
 impl Display for RequestType {
@@ -33,7 +34,19 @@ impl RequestType {
       "CONNECT" => RequestType::CONNECT,
       "PATCH" => RequestType::PATCH,
       "TRACE" => RequestType::TRACE,
+      "QUERY" => RequestType::QUERY,
       _ => RequestType::GET,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn parses_query_method() {
+    assert_eq!(RequestType::from_str("QUERY"), RequestType::QUERY);
+    assert_eq!(RequestType::QUERY.to_string(), "QUERY");
   }
 }

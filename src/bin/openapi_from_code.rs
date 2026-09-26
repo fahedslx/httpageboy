@@ -25,7 +25,9 @@ fn collect_rs_files(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), String>
     let path = entry.path();
     if path.is_dir() {
       collect_rs_files(&path, files)?;
-    } else if path.extension().is_some_and(|extension| extension == "rs") {
+    } else if path.extension().is_some_and(|extension| extension == "rs")
+      && path.file_name().and_then(|name| name.to_str()) != Some("openapi_from_code.rs")
+    {
       files.push(path);
     }
   }
@@ -254,7 +256,16 @@ fn load_routes(source: &Path) -> Result<Vec<RouteDoc>, String> {
   for file in files {
     routes.extend(parse_file(&file)?);
   }
-  routes.sort_by(|left, right| left.path.cmp(&right.path).then(left.method.cmp(&right.method)));
+  routes.sort_by(|left, right| {
+    left
+      .path
+      .cmp(&right.path)
+      .then(left.method.cmp(&right.method))
+      .then(left.handler.cmp(&right.handler))
+  });
+  routes.dedup_by(|left, right| {
+    left.path == right.path && left.method == right.method && left.handler == right.handler
+  });
   Ok(routes)
 }
 
@@ -291,7 +302,7 @@ fn emit_openapi(routes: &[RouteDoc]) -> String {
   let server = env::var("OPENAPI_SERVER_URL").unwrap_or_else(|_| "http://127.0.0.1".to_string());
 
   let mut out = vec![
-    "openapi: 3.0.3".to_string(),
+    "openapi: 3.2.1".to_string(),
     "info:".to_string(),
     format!("  title: {}", quote(&title)),
     format!("  version: {}", quote(&version)),
@@ -425,6 +436,49 @@ mod tests {
     assert_eq!(route.handler, "get_user");
     assert_eq!(route.headers, vec!["user-token".to_string()]);
     assert_eq!(route.permission, Some("users.read".to_string()));
+  }
+
+  #[test]
+  fn deduplicates_identical_routes() {
+    let dir = std::env::temp_dir().join("httpageboy-openapi-dedup");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+      dir.join("routes.rs"),
+      r#"
+        server.routes([
+          route!("/", Rt::GET, home),
+          route!("/", Rt::GET, home),
+        ]);
+      "#,
+    )
+    .unwrap();
+
+    let routes = load_routes(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].path, "/");
+    assert_eq!(routes[0].method, "get");
+  }
+
+  #[test]
+  fn emits_query_operation() {
+    let route = RouteDoc {
+      method: "query".to_string(),
+      path: "/search".to_string(),
+      handler: "search".to_string(),
+      summary: "Search".to_string(),
+      headers: Vec::new(),
+      permission: None,
+      request_body: Some("json".to_string()),
+      responses: Vec::new(),
+    };
+
+    let output = emit_openapi(&[route]);
+
+    assert!(output.contains("openapi: 3.2.1"));
+    assert!(output.contains("    query:"));
   }
 
   #[test]
