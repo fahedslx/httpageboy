@@ -30,7 +30,7 @@ async fn demo(_req: &Request) -> Response {
 
 #[tokio::main]
 async fn main() {
-  let mut srv = Server::new("127.0.0.1:7878", None).await.unwrap();
+  let mut srv = Server::new("127.0.0.1:7878").await.unwrap();
   srv.routes([route!("/", Rt::GET, demo)]);
   srv.run().await;
 }
@@ -45,9 +45,6 @@ server.routes([
   route!("/users", Rt::POST, create_user),
 ]);
 ```
-
-`route!` wraps the handler for the active runtime. The existing `add_route(..., handler!(...))`
-API remains available for incremental registration.
 
 Response now supports arbitrary headers:
 
@@ -80,13 +77,13 @@ Minimal sync lifecycle example:
 ```rust
 #![cfg(feature = "sync")]
 use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
-use httpageboy::{handler, test_case, Request, Response, Rt, Server, StatusCode};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
 
 const TEST_URL: &str = "127.0.0.1:0";
 
 fn server_factory() -> Server {
-  let mut server = Server::new(TEST_URL, 10, None).unwrap();
-  server.add_route("/", Rt::GET, handler!(home));
+  let mut server = Server::new(TEST_URL, 10).unwrap();
+  server.routes([route!("/", Rt::GET, home)]);
   server
 }
 
@@ -126,14 +123,13 @@ Minimal tokio lifecycle example:
 ```rust
 #![cfg(feature = "async_tokio")]
 use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
-use httpageboy::{handler, Request, Response, Rt, Server, StatusCode};
-use httpageboy::test_case;
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
 
 const TEST_URL: &str = "127.0.0.1:0";
 
 async fn server_factory() -> Server {
-  let mut server = Server::new(TEST_URL, None).await.unwrap();
-  server.add_route("/", Rt::GET, handler!(home));
+  let mut server = Server::new(TEST_URL).await.unwrap();
+  server.routes([route!("/", Rt::GET, home)]);
   server
 }
 
@@ -167,7 +163,7 @@ async fn home_works() -> TestResult {
 Servers now ship with a permissive CORS policy by default (allow all origins, methods, and common headers). You can tighten it after constructing the server:
 
 ```rust
-let mut server = Server::new("127.0.0.1:7878", None).await.unwrap();
+let mut server = Server::new("127.0.0.1:7878").await.unwrap();
 server.set_cors_str("origin=http://localhost:3000,credentials=true,headers=Content-Type");
 // or build it directly:
 // server.set_cors(CorsPolicy::from_config_str("origin=http://localhost:3000"));
@@ -177,7 +173,7 @@ Preflights (OPTIONS) are answered automatically using the active policy.
 
 ## OpenAPI helper
 
-`cargo openapi` generates OpenAPI from implemented `route!(...)` entries and the existing `server.add_route(...)` form. Put `// openapi:` comments immediately above the route they describe. It is dependency-free and works offline.
+`cargo openapi` generates OpenAPI directly from implemented `route!(...)` entries. Put `// openapi:` comments immediately above the route they describe. It is dependency-free and works offline.
 
 ```rust
 server.routes([
@@ -222,7 +218,7 @@ errors: invalid_token, insufficient_permissions
 
 Notes for API authors:
 
-- Put comments immediately above the `route!(...)` or `server.add_route(...)` call they describe.
+- Put comments immediately above the `route!(...)` call they describe.
 - Use `openapi:` for the human description; without it, the handler name is used.
 - Use `auth:` or `headers:` for required headers; omit it for public routes.
 - Use `permission:` when the route requires an authorization permission.

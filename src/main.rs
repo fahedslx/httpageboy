@@ -11,7 +11,7 @@ use {smol::Timer as SmolTimer, std::time::Duration};
   feature = "async_std",
   feature = "async_smol"
 ))]
-use httpageboy::{Request, Response, Rt, Server, StatusCode, handler};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route};
 
 // ROUTE HANDLER
 #[cfg(feature = "sync")]
@@ -55,8 +55,8 @@ fn main() {
   let serving_url: &str = "0.0.0.0:7878";
   let threads_number: u8 = 10;
 
-  let mut server = Server::new(serving_url, threads_number, None).unwrap();
-  server.add_route("/", Rt::GET, handler!(demo_get));
+  let mut server = Server::new(serving_url, threads_number).unwrap();
+  server.routes([route!("/", Rt::GET, demo_get)]);
   server.add_files_source("res");
   server.run();
 }
@@ -67,8 +67,8 @@ fn main() {
 async fn main() {
   let serving_url: &str = "0.0.0.0:7878";
 
-  let mut server = Server::new(serving_url, None).await.unwrap();
-  server.add_route("/", Rt::GET, handler!(demo_get));
+  let mut server = Server::new(serving_url).await.unwrap();
+  server.routes([route!("/", Rt::GET, demo_get)]);
   server.add_files_source("res");
   server.run().await;
 }
@@ -79,8 +79,8 @@ async fn main() {
 async fn main() {
   let serving_url: &str = "0.0.0.0:7878";
 
-  let mut server = Server::new(serving_url, None).await.unwrap();
-  server.add_route("/", Rt::GET, handler!(demo_get));
+  let mut server = Server::new(serving_url).await.unwrap();
+  server.routes([route!("/", Rt::GET, demo_get)]);
   server.add_files_source("res");
   server.run().await;
 }
@@ -105,8 +105,8 @@ fn main() {
 async fn run_smol() {
   let serving_url: &str = "0.0.0.0:7878";
 
-  let mut server = Server::new(serving_url, None).await.unwrap();
-  server.add_route("/", Rt::GET, handler!(demo_get));
+  let mut server = Server::new(serving_url).await.unwrap();
+  server.routes([route!("/", Rt::GET, demo_get)]);
   server.add_files_source("res");
   server.run().await;
 }

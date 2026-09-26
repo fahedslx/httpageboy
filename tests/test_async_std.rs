@@ -3,7 +3,7 @@
 use httpageboy::test_utils::{
   TestResult, is_test_server_registered, run_test, setup_test_server, shutdown_test_server,
 };
-use httpageboy::{Request, Response, Rt, Server, StatusCode, handler, route, test_case};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
 use std::collections::BTreeMap;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:58080";
@@ -13,27 +13,29 @@ const SUITE_ERROR_SERVER_URL: &str = "127.0.0.1:58083";
 const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:58084";
 
 async fn common_server_definition(server_url: &str) -> Server {
-  let mut server = match Server::new(server_url, None).await {
+  let mut server = match Server::new(server_url).await {
     Ok(server) => server,
-    Err(_) => Server::new("127.0.0.1:0", None)
+    Err(_) => Server::new("127.0.0.1:0")
       .await
       .expect("failed to bind test server"),
   };
-  server.add_route("/", Rt::GET, handler!(demo_handle_home));
-  server.add_route("/test", Rt::GET, handler!(demo_handle_get));
-  server.add_route("/test", Rt::POST, handler!(demo_handle_post));
-  server.add_route("/test/{param1}", Rt::POST, handler!(demo_handle_post));
-  server.add_route("/test/{param1}/{param2}", Rt::POST, handler!(demo_handle_post));
-  server.add_route("/test", Rt::PUT, handler!(demo_handle_put));
-  server.add_route("/test", Rt::PATCH, handler!(demo_handle_put));
-  server.add_route("/test", Rt::DELETE, handler!(demo_handle_delete));
-  server.add_route("/test", Rt::HEAD, handler!(demo_handle_head));
-  server.add_route("/test", Rt::OPTIONS, handler!(demo_handle_options));
-  server.add_route("/test", Rt::CONNECT, handler!(demo_handle_connect));
-  server.add_route("/test", Rt::TRACE, handler!(demo_handle_trace));
-  server.add_route("/redirect", Rt::GET, handler!(demo_handle_redirect));
-  server.add_route("/json", Rt::GET, handler!(demo_handle_json));
-  server.add_route("/custom-header", Rt::GET, handler!(demo_handle_custom_header));
+  server.routes([
+    route!("/", Rt::GET, demo_handle_home),
+    route!("/test", Rt::GET, demo_handle_get),
+    route!("/test", Rt::POST, demo_handle_post),
+    route!("/test/{param1}", Rt::POST, demo_handle_post),
+    route!("/test/{param1}/{param2}", Rt::POST, demo_handle_post),
+    route!("/test", Rt::PUT, demo_handle_put),
+    route!("/test", Rt::PATCH, demo_handle_put),
+    route!("/test", Rt::DELETE, demo_handle_delete),
+    route!("/test", Rt::HEAD, demo_handle_head),
+    route!("/test", Rt::OPTIONS, demo_handle_options),
+    route!("/test", Rt::CONNECT, demo_handle_connect),
+    route!("/test", Rt::TRACE, demo_handle_trace),
+    route!("/redirect", Rt::GET, demo_handle_redirect),
+    route!("/json", Rt::GET, demo_handle_json),
+    route!("/custom-header", Rt::GET, demo_handle_custom_header),
+  ]);
   let res_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res");
   server.add_files_source(res_path.to_str().unwrap());
   server
@@ -754,13 +756,3 @@ async fn test_case_accepts_only_test_block() -> TestResult {
   Ok(())
 }
 
-#[async_std::test]
-async fn test_routes_registers_declarative_batch() {
-  let mut server = Server::new("127.0.0.1:0", None)
-    .await
-    .expect("bind declarative route server");
-  server.routes([
-    route!("/", Rt::GET, demo_handle_home),
-    route!("/test", Rt::GET, demo_handle_get),
-  ]);
-}

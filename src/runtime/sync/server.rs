@@ -1,9 +1,7 @@
 #![cfg(feature = "sync")]
 
 use crate::core::cors::CorsPolicy;
-use crate::core::handler::Handler;
 use crate::core::request::{Request, handle_request_sync};
-use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
 use crate::core::route::Route;
 use crate::core::response::Response;
@@ -21,28 +19,23 @@ pub struct Server {
   url: String,
   listener: TcpListener,
   pool: Arc<Mutex<ThreadPool>>,
-  routes: HashMap<(Rt, String), Rh>,
+  routes: HashMap<(Rt, String), Arc<dyn crate::core::handler::Handler>>,
   files_sources: Vec<String>,
   auto_close: bool,
   cors: Option<Arc<CorsPolicy>>,
 }
 
 impl Server {
-  pub fn new(
-    serving_url: &str,
-    pool_size: u8,
-    routes_list: Option<HashMap<(Rt, String), Rh>>,
-  ) -> Result<Server, std::io::Error> {
+  pub fn new(serving_url: &str, pool_size: u8) -> Result<Server, std::io::Error> {
     let listener = TcpListener::bind(serving_url)?;
     let url = listener.local_addr()?.to_string();
     let pool = Arc::new(Mutex::new(ThreadPool::new(pool_size as usize)));
-    let routes = routes_list.unwrap_or_default();
 
     Ok(Server {
       url,
       listener,
       pool,
-      routes,
+      routes: HashMap::new(),
       files_sources: Vec::new(),
       auto_close: true,
       cors: Some(Arc::new(CorsPolicy::default())),
@@ -67,11 +60,6 @@ impl Server {
 
   pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
     self.listener.local_addr()
-  }
-
-  pub fn add_route(&mut self, path: &str, rt: Rt, handler: Arc<dyn Handler>) {
-    let key = (rt, path.to_string());
-    self.routes.insert(key, Rh { handler });
   }
 
   pub fn routes<I>(&mut self, routes: I)

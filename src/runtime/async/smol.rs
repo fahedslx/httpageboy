@@ -1,13 +1,11 @@
 use crate::core::cors::CorsPolicy;
 use crate::core::request::handle_request_async;
-use crate::core::request_handler::Rh;
 use crate::runtime::r#async::shared;
 use crate::runtime::shared::{print_server_info, response_or_default};
 use async_trait::async_trait;
 use smol::io::AsyncWriteExt;
 use smol::net::{TcpListener, TcpStream};
 use smol::spawn;
-use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -46,16 +44,13 @@ impl DerefMut for Server {
 
 impl Server {
   /// Creates a new server and binds to the specified URL.
-  pub async fn new(
-    serving_url: &str,
-    routes_list: Option<HashMap<(crate::core::request_type::Rt, String), Rh>>,
-  ) -> std::io::Result<Self> {
+  pub async fn new(serving_url: &str) -> std::io::Result<Self> {
     let listener = TcpListener::bind(serving_url).await?;
     let url = listener.local_addr()?.to_string();
     Ok(Server(shared::GenericServer {
       listener,
       url,
-      routes: Arc::new(routes_list.unwrap_or_default()),
+      routes: Arc::new(Default::default()),
       files_sources: Arc::new(Vec::new()),
       auto_close: true,
       cors: Some(Arc::new(CorsPolicy::default())),
