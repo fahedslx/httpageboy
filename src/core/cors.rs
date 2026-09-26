@@ -80,3 +80,14 @@ impl CorsPolicy {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn default_methods_include_query() {
+    let policy = CorsPolicy::default();
+    assert!(policy.allow_methods.split(',').any(|method| method == "QUERY"));
+  }
+}
