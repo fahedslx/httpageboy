@@ -267,6 +267,17 @@ cargo test --features async_smol --test test_async_smol
 cargo test --bin openapi_from_code
 ```
 
+## CI/CD
+
+The automation logic lives in the repository and is independent from the CI provider:
+
+- `ci/test.sh` runs the full test matrix and checks the executable example.
+- `ci/publish.sh` publishes only when the `Cargo.toml` version does not already exist on crates.io.
+- `ci/release.sh` runs tests and then publication.
+
+GitLab CI only invokes these scripts. The same scripts can be called from Jenkins, GitHub Actions, or another runner.
+
+Changing the package version is the explicit release signal. Merging without a new version validates the project but does not publish a duplicate release.
 ## Examples
 
 Additional examples can be found within the tests.
