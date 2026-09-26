@@ -6,7 +6,6 @@
 ))]
 
 use crate::core::handler::Handler;
-use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
 use std::sync::Arc;
 
@@ -29,15 +28,32 @@ impl Route {
     }
   }
 
-  pub(crate) fn into_parts(self) -> ((Rt, String), Rh) {
-    ((self.method, self.path), Rh { handler: self.handler })
+  pub(crate) fn into_parts(self) -> ((Rt, String), Arc<dyn Handler>) {
+    ((self.method, self.path), self.handler)
   }
 }
 
-/// Builds a route while keeping runtime-specific handler wrapping out of user code.
+/// Builds a route for synchronous servers.
 #[macro_export]
+#[cfg(feature = "sync")]
 macro_rules! route {
   ($path:expr, $method:expr, $handler_fn:expr) => {
-    $crate::Route::new($path, $method, $crate::handler!($handler_fn))
+    $crate::Route::new($path, $method, $crate::core::handler::sync_h($handler_fn))
+  };
+}
+
+/// Builds a route for asynchronous servers.
+#[macro_export]
+#[cfg(all(
+  any(feature = "async_tokio", feature = "async_std", feature = "async_smol"),
+  not(feature = "sync")
+))]
+macro_rules! route {
+  ($path:expr, $method:expr, $handler_fn:expr) => {
+    $crate::Route::new(
+      $path,
+      $method,
+      $crate::core::handler::async_h(move |req| Box::pin($handler_fn(req))),
+    )
   };
 }

@@ -1,6 +1,5 @@
 use crate::core::cors::CorsPolicy;
 use crate::core::handler::Handler;
-use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
 use crate::core::route::Route;
 use crate::core::response::Response;
@@ -41,7 +40,7 @@ pub async fn send_response<S: AsyncStream>(
 pub struct GenericServer<L> {
   pub listener: L,
   pub url: String,
-  pub routes: Arc<HashMap<(Rt, String), Rh>>,
+  pub routes: Arc<HashMap<(Rt, String), Arc<dyn Handler>>>,
   pub files_sources: Arc<Vec<String>>,
   pub auto_close: bool,
   pub cors: Option<Arc<CorsPolicy>>,
@@ -51,13 +50,6 @@ impl<L> GenericServer<L> {
   /// Toggles the `Connection: close` header.
   pub fn set_auto_close(&mut self, active: bool) {
     self.auto_close = active;
-  }
-
-  /// Adds a new route to the server.
-  pub fn add_route(&mut self, path: &str, rt: Rt, handler: Arc<dyn Handler>) {
-    Arc::get_mut(&mut self.routes)
-      .unwrap()
-      .insert((rt, path.to_string()), Rh { handler });
   }
 
   pub fn routes<I>(&mut self, routes: I)

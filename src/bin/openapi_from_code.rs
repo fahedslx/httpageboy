@@ -40,9 +40,6 @@ fn extract_between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str>
 }
 
 fn route_call_start(statement: &str) -> Option<usize> {
-  if let Some(start) = statement.find(".add_route(") {
-    return Some(start + ".add_route(".len());
-  }
   statement.find("route!(").map(|start| start + "route!(".len())
 }
 
@@ -55,14 +52,6 @@ fn extract_route_path(statement: &str) -> Option<String> {
 }
 
 fn extract_route_handler(statement: &str) -> Option<String> {
-  if statement.contains(".add_route(") {
-    return Some(
-      extract_between(statement, "handler!(", ")")?
-        .trim()
-        .to_string(),
-    );
-  }
-
   let method_start = statement.find("Rt::")?;
   let after_method = &statement[method_start..];
   let method_end = after_method.find(',')?;
@@ -79,7 +68,7 @@ fn extract_route_handler(statement: &str) -> Option<String> {
 }
 
 fn is_route_statement(statement: &str) -> bool {
-  statement.contains(".add_route(") || statement.contains("route!(")
+  statement.contains("route!(")
 }
 
 fn route_statement_complete(statement: &str) -> bool {
@@ -422,25 +411,6 @@ mod tests {
 
   #[test]
   fn parses_route_and_doc_comment() {
-    let statement = r#"server.add_route("/users/{id}", Rt::GET, handler!(get_user));"#;
-    let comments = vec![
-      "openapi: Get user".to_string(),
-      "auth: user-token, app-id".to_string(),
-      "permission: users.read".to_string(),
-      "response: 200 User".to_string(),
-    ];
-
-    let route = parse_route(statement, &comments).expect("route");
-
-    assert_eq!(route.path, "/users/{id}");
-    assert_eq!(route.method, "get");
-    assert_eq!(route.handler, "get_user");
-    assert_eq!(route.headers, vec!["app-id".to_string(), "user-token".to_string()]);
-    assert_eq!(route.permission, Some("users.read".to_string()));
-  }
-
-  #[test]
-  fn parses_route_macro_and_doc_comment() {
     let statement = r#"route!("/users/{id}", Rt::GET, get_user),"#;
     let comments = vec![
       "openapi: Get user".to_string(),
