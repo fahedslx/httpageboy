@@ -16,10 +16,10 @@ A basic server setup (select a runtime feature when running, e.g. `cargo run --f
 
 ```rust
 #![cfg(feature = "async_tokio")]
-use httpageboy::{route, Rt, Response, Server, StatusCode};
+use httpageboy::{route, Request, Rt, Response, Server, StatusCode};
 
 /// Minimal async handler: waits 100ms and replies "ok"
-async fn demo(_req: &()) -> Response {
+async fn demo(_req: &Request) -> Response {
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   Response {
     status: StatusCode::Ok.to_string(),
@@ -34,7 +34,7 @@ async fn main() {
   srv.routes([route!("/", Rt::GET, demo)]);
   srv.run().await;
 }
-````
+```
 
 Routes can be registered together without changing the underlying router:
 
