@@ -5,6 +5,7 @@ use crate::core::handler::Handler;
 use crate::core::request::{Request, handle_request_sync};
 use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
+use crate::core::route::Route;
 use crate::core::response::Response;
 use crate::runtime::shared::{file_source_path, print_server_info, response_head, response_or_default};
 use crate::runtime::sync::threadpool::ThreadPool;
@@ -71,6 +72,16 @@ impl Server {
   pub fn add_route(&mut self, path: &str, rt: Rt, handler: Arc<dyn Handler>) {
     let key = (rt, path.to_string());
     self.routes.insert(key, Rh { handler });
+  }
+
+  pub fn routes<I>(&mut self, routes: I)
+  where
+    I: IntoIterator<Item = Route>,
+  {
+    for route in routes {
+      let (key, handler) = route.into_parts();
+      self.routes.insert(key, handler);
+    }
   }
 
   pub fn add_files_source<S>(&mut self, base: S)

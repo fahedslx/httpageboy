@@ -16,7 +16,7 @@ A basic server setup (select a runtime feature when running, e.g. `cargo run --f
 
 ```rust
 #![cfg(feature = "async_tokio")]
-use httpageboy::{Rt, Response, Server, StatusCode};
+use httpageboy::{route, Rt, Response, Server, StatusCode};
 
 /// Minimal async handler: waits 100ms and replies "ok"
 async fn demo(_req: &()) -> Response {
@@ -31,10 +31,23 @@ async fn demo(_req: &()) -> Response {
 #[tokio::main]
 async fn main() {
   let mut srv = Server::new("127.0.0.1:7878", None).await.unwrap();
-  srv.add_route("/", Rt::GET, handler!(demo));
+  srv.routes([route!("/", Rt::GET, demo)]);
   srv.run().await;
 }
 ````
+
+Routes can be registered together without changing the underlying router:
+
+```rust
+server.routes([
+  route!("/", Rt::GET, home),
+  route!("/users", Rt::GET, list_users),
+  route!("/users", Rt::POST, create_user),
+]);
+```
+
+`route!` wraps the handler for the active runtime. The existing `add_route(..., handler!(...))`
+API remains available for incremental registration.
 
 Response now supports arbitrary headers:
 
@@ -167,11 +180,13 @@ Preflights (OPTIONS) are answered automatically using the active policy.
 `cargo openapi` generates OpenAPI directly from implemented `server.add_route(...)` calls and the `// openapi:` comments placed immediately above each route. It is dependency-free and works offline.
 
 ```rust
-// openapi: List users in the business
-// auth: user-token, business-id, app-id
-// permission: users.read
-// response: 200 User list
-server.add_route("/businesses/{id}/users", Rt::GET, handler!(list_business_users));
+server.routes([
+  // openapi: List users in the business
+  // auth: user-token, business-id, app-id
+  // permission: users.read
+  // response: 200 User list
+  route!("/businesses/{id}/users", Rt::GET, list_business_users),
+]);
 ```
 
 Default project flow:
@@ -207,7 +222,7 @@ errors: invalid_token, insufficient_permissions
 
 Notes for API authors:
 
-- Put comments immediately above the `server.add_route(...)` call they describe.
+- Put comments immediately above the `route!(...)` or `server.add_route(...)` call they describe.
 - Use `openapi:` for the human description; without it, the handler name is used.
 - Use `auth:` or `headers:` for required headers; omit it for public routes.
 - Use `permission:` when the route requires an authorization permission.
