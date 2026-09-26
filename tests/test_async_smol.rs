@@ -3,7 +3,7 @@
 use httpageboy::test_utils::{
   TestResult, is_test_server_registered, run_test, setup_test_server, shutdown_test_server,
 };
-use httpageboy::{Request, Response, Rt, Server, StatusCode, handler, test_case};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, handler, route, test_case};
 use std::collections::BTreeMap;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:28080";
@@ -849,4 +849,17 @@ fn test_case_accepts_only_test_block() -> TestResult {
     shutdown_test_server(SUITE_MINIMAL_SERVER_URL)?;
     Ok(())
   })
+}
+
+#[test]
+fn test_routes_registers_declarative_batch() {
+  smol::block_on(async {
+    let mut server = Server::new("127.0.0.1:0", None)
+      .await
+      .expect("bind declarative route server");
+    server.routes([
+      route!("/", Rt::GET, demo_handle_home),
+      route!("/test", Rt::GET, demo_handle_get),
+    ]);
+  });
 }

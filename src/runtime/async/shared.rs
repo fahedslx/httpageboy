@@ -2,6 +2,7 @@ use crate::core::cors::CorsPolicy;
 use crate::core::handler::Handler;
 use crate::core::request_handler::Rh;
 use crate::core::request_type::Rt;
+use crate::core::route::Route;
 use crate::core::response::Response;
 use crate::runtime::shared as runtime_shared;
 use async_trait::async_trait;
@@ -57,6 +58,17 @@ impl<L> GenericServer<L> {
     Arc::get_mut(&mut self.routes)
       .unwrap()
       .insert((rt, path.to_string()), Rh { handler });
+  }
+
+  pub fn routes<I>(&mut self, routes: I)
+  where
+    I: IntoIterator<Item = Route>,
+  {
+    let route_map = Arc::get_mut(&mut self.routes).unwrap();
+    for route in routes {
+      let (key, handler) = route.into_parts();
+      route_map.insert(key, handler);
+    }
   }
 
   pub fn url(&self) -> &str {

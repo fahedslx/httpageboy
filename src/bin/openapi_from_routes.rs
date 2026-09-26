@@ -312,11 +312,11 @@ mod tests {
       (
         "service".to_string(),
         Value::Map(BTreeMap::from([
-          ("name".to_string(), Value::String("api-sales".to_string())),
+          ("name".to_string(), Value::String("api-core".to_string())),
           ("version".to_string(), Value::String("0.1.0".to_string())),
           (
             "server".to_string(),
-            Value::String("https://api-sales.eqeqo.pe".to_string()),
+            Value::String("https://api-core.eqeqo.pe".to_string()),
           ),
         ])),
       ),
@@ -351,7 +351,7 @@ mod tests {
     let output = emit_openapi(&data).expect("openapi output");
 
     assert!(output.contains("openapi: 3.0.3"));
-    assert!(output.contains("title: \"api-sales\""));
+    assert!(output.contains("title: \"api-core\""));
     assert!(output.contains("  /products:"));
     assert!(output.contains("    get:"));
     assert!(output.contains("name: \"products.read\""));
