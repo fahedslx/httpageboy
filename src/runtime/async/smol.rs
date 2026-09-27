@@ -124,7 +124,7 @@ impl Server {
           response_or_default(routed, &method, cors_policy.as_deref())
         }
       };
-      if resp.status.starts_with("101 ") {
+      if resp.status == crate::StatusCode::SwitchingProtocols {
         if let Some(upgrade) = upgrade {
           if !shared::send_response(
             &mut stream,
