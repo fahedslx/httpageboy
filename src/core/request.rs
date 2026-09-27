@@ -365,15 +365,29 @@ macro_rules! create_async_parse_stream {
 
         match read {
           Ok(0) => {
-            return if buffer.is_empty() {
-              crate::core::request::StreamRead::Closed
-            } else {
-              crate::core::request::StreamRead::Error(
-                crate::core::request::error_response(
-                  crate::core::status_code::StatusCode::BadRequest,
-                ),
-              )
-            };
+            if buffer.is_empty() {
+              return crate::core::request::StreamRead::Closed;
+            }
+
+            match crate::core::request::take_framed_request(buffer, limits, true) {
+              Ok(Some(raw)) => {
+                let (request, early) =
+                  crate::core::request::Request::parse_raw_async(raw, routes, file_bases).await;
+                return crate::core::request::StreamRead::Ready(request, early);
+              }
+              Ok(None) => {
+                return crate::core::request::StreamRead::Error(
+                  crate::core::request::error_response(
+                    crate::core::status_code::StatusCode::BadRequest,
+                  ),
+                );
+              }
+              Err(status) => {
+                return crate::core::request::StreamRead::Error(
+                  crate::core::request::error_response(status),
+                );
+              }
+            }
           }
           Ok(n) => {
             if started.is_none() {
@@ -640,11 +654,18 @@ impl Request {
       match stream.read(&mut chunk) {
         Ok(0) => {
           let _ = stream.set_read_timeout(None);
-          return if buffer.is_empty() {
-            StreamRead::Closed
-          } else {
-            StreamRead::Error(error_response(StatusCode::BadRequest))
-          };
+          if buffer.is_empty() {
+            return StreamRead::Closed;
+          }
+
+          match take_framed_request(buffer, limits, true) {
+            Ok(Some(raw)) => {
+              let (request, early) = Self::parse_raw_sync(raw, routes, file_bases);
+              return StreamRead::Ready(request, early);
+            }
+            Ok(None) => return StreamRead::Error(error_response(StatusCode::BadRequest)),
+            Err(status) => return StreamRead::Error(error_response(status)),
+          }
         }
         Ok(n) => {
           if started.is_none() {
