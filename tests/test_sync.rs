@@ -217,6 +217,31 @@ fn test_get() {
 }
 
 #[test]
+fn test_persistent_connection_handles_multiple_requests() {
+  boot_regular();
+  let mut stream = TcpStream::connect(REGULAR_SERVER_URL).expect("connect to test server");
+  stream
+    .write_all(
+      b"GET /test HTTP/1.1\r\n\r\nGET /test HTTP/1.1\r\nConnection: close\r\n\r\n",
+    )
+    .expect("write requests");
+
+  let mut response = String::new();
+  stream.read_to_string(&mut response).expect("read responses");
+
+  assert_eq!(response.matches("HTTP/1.1 200 OK").count(), 2, "{response}");
+  assert_eq!(response.matches("\r\n\r\nget").count(), 2, "{response}");
+}
+
+#[test]
+fn test_chunked_request_body() {
+  boot_regular();
+  let request = b"POST /test HTTP/1.1\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
+  let expected_response = b"Body: \"Wikipedia\"";
+  run_regular(request, expected_response);
+}
+
+#[test]
 fn test_get_with_query() {
   boot_regular();
   let request = b"GET /test?foo=bar&baz=qux HTTP/1.1\r\n\r\n";
