@@ -1,228 +1,315 @@
+/// Default maximum request body size: 8 MiB.
+pub const DEFAULT_BODY_LIMIT_BYTES: usize = 8 * 1024 * 1024;
+/// Default maximum request head size: 64 KiB.
+pub const DEFAULT_HEADER_LIMIT_BYTES: usize = 64 * 1024;
+/// Default total read timeout used while receiving a request.
+pub const DEFAULT_READ_TIMEOUT_SECS: u64 = 5;
+
+#[derive(Clone, Copy, Debug)]
+pub struct RequestLimits {
+  pub body_bytes: usize,
+  pub header_bytes: usize,
+  pub read_timeout: std::time::Duration,
+}
+
+impl Default for RequestLimits {
+  fn default() -> Self {
+    Self {
+      body_bytes: DEFAULT_BODY_LIMIT_BYTES,
+      header_bytes: DEFAULT_HEADER_LIMIT_BYTES,
+      read_timeout: std::time::Duration::from_secs(DEFAULT_READ_TIMEOUT_SECS),
+    }
+  }
+}
+
+fn request_error(
+  status: crate::core::status_code::StatusCode,
+) -> (
+  crate::core::request::Request,
+  Option<crate::core::response::Response>,
+) {
+  (
+    crate::core::request::Request::default(),
+    Some(crate::core::response::Response {
+      status: status.to_string(),
+      headers: vec![],
+      body: Vec::new(),
+    }),
+  )
+}
+
 /// Generates a `parse_stream` function for a specific async runtime.
-///
-/// This macro abstracts the common logic of reading and parsing an HTTP request
-/// from a TCP stream, while allowing the caller to specify the runtime-specific
-/// types and traits (stream type, BufReader, and I/O extension traits).
-pub const READ_TIMEOUT_MS: u64 = 50;
-pub const BODY_READ_LIMIT_BYTES: u64 = 512;
-
 macro_rules! create_async_parse_stream {
-    (
-        $(#[$outer:meta])*
-        $func_name:ident,
-        $stream_ty:ty,
-        $buf_reader:ty,
-        $async_read_ext:path,
-        $async_buf_read_ext:path
-    ) => {
-        $(#[$outer])*
-        pub async fn $func_name(
-            stream: &mut $stream_ty,
-            routes: &std::collections::HashMap<(crate::core::request_type::Rt, String), crate::core::route::RouteEntry>,
-            file_bases: &[String],
-        ) -> (crate::core::request::Request, Option<crate::core::response::Response>) {
-            use $async_read_ext;
-            use $async_buf_read_ext;
+  (
+    $(#[$outer:meta])*
+    $func_name:ident,
+    $stream_ty:ty,
+    $buf_reader:ty,
+    $async_read_ext:path,
+    $async_buf_read_ext:path
+  ) => {
+    $(#[$outer])*
+    pub async fn $func_name(
+      stream: &mut $stream_ty,
+      routes: &std::collections::HashMap<(crate::core::request_type::Rt, String), crate::core::route::RouteEntry>,
+      file_bases: &[String],
+      limits: &crate::core::request::RequestLimits,
+    ) -> (crate::core::request::Request, Option<crate::core::response::Response>) {
+      use $async_read_ext;
+      use $async_buf_read_ext;
 
-            let mut reader = <$buf_reader>::new(stream);
-            let mut raw = String::new();
-            let header_timeout = std::time::Duration::from_millis(crate::core::request::READ_TIMEOUT_MS);
+      let mut reader = <$buf_reader>::new(stream);
+      let mut raw: Vec<u8> = Vec::new();
+      let header_started = std::time::Instant::now();
 
-            // Read headers only
-            loop {
-                let mut line = String::new();
-                #[cfg(feature = "async_tokio")]
-                {
-                    let read_fut = reader.read_line(&mut line);
-                    let sleep = tokio::time::sleep(header_timeout);
-                    futures::pin_mut!(read_fut, sleep);
-                    match futures::future::select(read_fut, sleep).await {
-                        futures::future::Either::Left((Ok(n), _)) if n > 0 => {
-                            raw.push_str(&line);
-                            if raw.contains("\r\n\r\n") {
-                                break;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
+      loop {
+        let remaining = match limits.read_timeout.checked_sub(header_started.elapsed()) {
+          Some(value) if !value.is_zero() => value,
+          _ => return crate::core::request::request_error(crate::core::status_code::StatusCode::RequestTimeout),
+        };
+        let mut line = String::new();
 
-                #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
-                {
-                    let read_fut = reader.read_line(&mut line);
-                    let sleep = async_std::task::sleep(header_timeout);
-                    futures::pin_mut!(read_fut, sleep);
-                    match futures::future::select(read_fut, sleep).await {
-                        futures::future::Either::Left((Ok(n), _)) if n > 0 => {
-                            raw.push_str(&line);
-                            if raw.contains("\r\n\r\n") {
-                                break;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
-
-                #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
-                {
-                    let read_fut = reader.read_line(&mut line);
-                    let sleep = smol::Timer::after(header_timeout);
-                    futures::pin_mut!(read_fut, sleep);
-                    match futures::future::select(read_fut, sleep).await {
-                        futures::future::Either::Left((Ok(n), _)) if n > 0 => {
-                            raw.push_str(&line);
-                            if raw.contains("\r\n\r\n") {
-                                break;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
+        #[cfg(feature = "async_tokio")]
+        let n = {
+          let read_fut = reader.read_line(&mut line);
+          let sleep = tokio::time::sleep(remaining);
+          futures::pin_mut!(read_fut, sleep);
+          match futures::future::select(read_fut, sleep).await {
+            futures::future::Either::Left((Ok(n), _)) => n,
+            futures::future::Either::Left((Err(_), _)) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::BadRequest);
             }
-
-            // Extract method from the first line
-            let method = raw
-                .lines()
-                .next()
-                .and_then(|l| l.split_whitespace().next())
-                .unwrap_or("");
-
-            let (content_length, has_transfer_encoding) = crate::core::request::extract_body_headers(&raw);
-
-            // Read declared body size. For POST/PUT/DELETE/PATCH/QUERY without Content-Length or Transfer-Encoding, fall back to a timed read.
-            if content_length > 0 {
-                // Read exactly content_length bytes
-                let mut buf = vec![0; content_length];
-                let _ = reader.read_exact(&mut buf).await;
-                raw.push_str(&String::from_utf8_lossy(&buf));
-            } else if method == "POST" || method == "PUT" || method == "DELETE" || method == "PATCH" || method == "QUERY" {
-                if has_transfer_encoding {
-                    // Read all until EOF for POST/PUT/DELETE/PATCH/QUERY with Transfer-Encoding and without Content-Length
-                    let mut rest = String::new();
-
-                    #[cfg(feature = "async_tokio")]
-                    {
-                        use std::time::Duration;
-                        let mut limited = reader.take(crate::core::request::BODY_READ_LIMIT_BYTES);
-                        let read_fut = limited.read_to_string(&mut rest);
-                        let sleep = tokio::time::sleep(Duration::from_millis(crate::core::request::READ_TIMEOUT_MS));
-                        futures::pin_mut!(read_fut, sleep);
-                        if matches!(
-                            futures::future::select(read_fut, sleep).await,
-                            futures::future::Either::Left((Ok(_), _))
-                        ) {
-                            raw.push_str(&rest);
-                        }
-                    }
-
-                    #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
-                    {
-                        use std::time::Duration;
-                        let mut limited = reader.take(crate::core::request::BODY_READ_LIMIT_BYTES);
-                        let read_fut = limited.read_to_string(&mut rest);
-                        let sleep = async_std::task::sleep(Duration::from_millis(crate::core::request::READ_TIMEOUT_MS));
-                        futures::pin_mut!(read_fut, sleep);
-                        if matches!(
-                            futures::future::select(read_fut, sleep).await,
-                            futures::future::Either::Left((Ok(_), _))
-                        ) {
-                            raw.push_str(&rest);
-                        }
-                    }
-
-                    #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
-                    {
-                        use std::time::Duration;
-                        let mut limited = reader.take(crate::core::request::BODY_READ_LIMIT_BYTES);
-                        let read_fut = limited.read_to_string(&mut rest);
-                        let sleep = smol::Timer::after(Duration::from_millis(crate::core::request::READ_TIMEOUT_MS));
-                        futures::pin_mut!(read_fut, sleep);
-                        if matches!(
-                            futures::future::select(read_fut, sleep).await,
-                            futures::future::Either::Left((Ok(_), _))
-                        ) {
-                            raw.push_str(&rest);
-                        }
-                    }
-                } else {
-                    // No length hints; read opportunistically with a short timeout to avoid hanging.
-                    let mut buf: Vec<u8> = Vec::new();
-
-                    #[cfg(feature = "async_tokio")]
-                    {
-                        use std::time::Duration;
-                        let mut chunk = [0u8; 128];
-                        loop {
-                            let read_fut = reader.read(&mut chunk);
-                            let sleep = tokio::time::sleep(Duration::from_millis(crate::core::request::READ_TIMEOUT_MS));
-                            futures::pin_mut!(read_fut, sleep);
-                            match futures::future::select(read_fut, sleep).await {
-                                futures::future::Either::Left((Ok(0), _)) => break,
-                                futures::future::Either::Left((Ok(n), _)) => {
-                                    buf.extend_from_slice(&chunk[..n]);
-                                    if buf.len() as u64 >= crate::core::request::BODY_READ_LIMIT_BYTES {
-                                        break;
-                                    }
-                                }
-                                futures::future::Either::Left((Err(_), _)) => break,
-                                futures::future::Either::Right(_) => break,
-                            }
-                        }
-                    }
-
-                    #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
-                    {
-                        use std::time::Duration;
-                        let mut chunk = [0u8; 128];
-                        loop {
-                            let read_fut = reader.read(&mut chunk);
-                            let sleep = async_std::task::sleep(Duration::from_millis(crate::core::request::READ_TIMEOUT_MS));
-                            futures::pin_mut!(read_fut, sleep);
-                            match futures::future::select(read_fut, sleep).await {
-                                futures::future::Either::Left((Ok(0), _)) => break,
-                                futures::future::Either::Left((Ok(n), _)) => {
-                                    buf.extend_from_slice(&chunk[..n]);
-                                    if buf.len() as u64 >= crate::core::request::BODY_READ_LIMIT_BYTES {
-                                        break;
-                                    }
-                                }
-                                futures::future::Either::Left((Err(_), _)) => break,
-                                futures::future::Either::Right(_) => break,
-                            }
-                        }
-                    }
-
-                    #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
-                    {
-                        use std::time::Duration;
-                        let mut chunk = [0u8; 128];
-                        loop {
-                            let read_fut = reader.read(&mut chunk);
-                            let sleep = smol::Timer::after(Duration::from_millis(crate::core::request::READ_TIMEOUT_MS));
-                            futures::pin_mut!(read_fut, sleep);
-                            match futures::future::select(read_fut, sleep).await {
-                                futures::future::Either::Left((Ok(0), _)) => break,
-                                futures::future::Either::Left((Ok(n), _)) => {
-                                    buf.extend_from_slice(&chunk[..n]);
-                                    if buf.len() as u64 >= crate::core::request::BODY_READ_LIMIT_BYTES {
-                                        break;
-                                    }
-                                }
-                                futures::future::Either::Left((Err(_), _)) => break,
-                                futures::future::Either::Right(_) => break,
-                            }
-                        }
-                    }
-
-                    if !buf.is_empty() {
-                        raw.push_str(&String::from_utf8_lossy(&buf));
-                    }
-                }
+            futures::future::Either::Right(_) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::RequestTimeout);
             }
+          }
+        };
 
-            crate::core::request::Request::parse_raw_async(raw, routes, file_bases).await
+        #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
+        let n = {
+          let read_fut = reader.read_line(&mut line);
+          let sleep = async_std::task::sleep(remaining);
+          futures::pin_mut!(read_fut, sleep);
+          match futures::future::select(read_fut, sleep).await {
+            futures::future::Either::Left((Ok(n), _)) => n,
+            futures::future::Either::Left((Err(_), _)) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::BadRequest);
+            }
+            futures::future::Either::Right(_) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::RequestTimeout);
+            }
+          }
+        };
+
+        #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
+        let n = {
+          let read_fut = reader.read_line(&mut line);
+          let sleep = smol::Timer::after(remaining);
+          futures::pin_mut!(read_fut, sleep);
+          match futures::future::select(read_fut, sleep).await {
+            futures::future::Either::Left((Ok(n), _)) => n,
+            futures::future::Either::Left((Err(_), _)) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::BadRequest);
+            }
+            futures::future::Either::Right(_) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::RequestTimeout);
+            }
+          }
+        };
+
+        if n == 0 {
+          break;
         }
-    };
+        raw.extend_from_slice(line.as_bytes());
+        if raw.len() > limits.header_bytes {
+          return crate::core::request::request_error(
+            crate::core::status_code::StatusCode::RequestHeaderFieldsTooLarge,
+          );
+        }
+        if line == "\r\n" || line == "\n" {
+          break;
+        }
+      }
+
+      let (method, content_length, has_transfer_encoding) = {
+        let head = String::from_utf8_lossy(&raw);
+        let method = head
+          .lines()
+          .next()
+          .and_then(|line| line.split_whitespace().next())
+          .unwrap_or("")
+          .to_string();
+        let (content_length, has_transfer_encoding) =
+          match crate::core::request::extract_body_headers(&head) {
+            Ok(value) => value,
+            Err(status) => return crate::core::request::request_error(status),
+          };
+        (method, content_length, has_transfer_encoding)
+      };
+
+      if content_length > limits.body_bytes {
+        return crate::core::request::request_error(crate::core::status_code::StatusCode::PayloadTooLarge);
+      }
+
+      if content_length > 0 {
+        let mut body = Vec::with_capacity(content_length);
+        let body_started = std::time::Instant::now();
+
+        #[cfg(feature = "async_tokio")]
+        {
+          let mut limited = reader.take(content_length as u64);
+          let read_fut = limited.read_to_end(&mut body);
+          let sleep = tokio::time::sleep(limits.read_timeout);
+          futures::pin_mut!(read_fut, sleep);
+          match futures::future::select(read_fut, sleep).await {
+            futures::future::Either::Left((Ok(_), _)) => {}
+            futures::future::Either::Left((Err(_), _)) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::BadRequest);
+            }
+            futures::future::Either::Right(_) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::RequestTimeout);
+            }
+          }
+        }
+
+        #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
+        {
+          let mut limited = reader.take(content_length as u64);
+          let read_fut = limited.read_to_end(&mut body);
+          let sleep = async_std::task::sleep(limits.read_timeout);
+          futures::pin_mut!(read_fut, sleep);
+          match futures::future::select(read_fut, sleep).await {
+            futures::future::Either::Left((Ok(_), _)) => {}
+            futures::future::Either::Left((Err(_), _)) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::BadRequest);
+            }
+            futures::future::Either::Right(_) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::RequestTimeout);
+            }
+          }
+        }
+
+        #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
+        {
+          let mut limited = reader.take(content_length as u64);
+          let read_fut = limited.read_to_end(&mut body);
+          let sleep = smol::Timer::after(limits.read_timeout);
+          futures::pin_mut!(read_fut, sleep);
+          match futures::future::select(read_fut, sleep).await {
+            futures::future::Either::Left((Ok(_), _)) => {}
+            futures::future::Either::Left((Err(_), _)) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::BadRequest);
+            }
+            futures::future::Either::Right(_) => {
+              return crate::core::request::request_error(crate::core::status_code::StatusCode::RequestTimeout);
+            }
+          }
+        }
+
+        let _ = body_started;
+        if body.len() != content_length {
+          return crate::core::request::request_error(crate::core::status_code::StatusCode::BadRequest);
+        }
+        raw.extend_from_slice(&body);
+      } else if matches!(method.as_str(), "POST" | "PUT" | "DELETE" | "PATCH" | "QUERY") {
+        let mut body: Vec<u8> = Vec::new();
+
+        if has_transfer_encoding {
+          let take_limit = limits.body_bytes.saturating_add(1) as u64;
+
+          #[cfg(feature = "async_tokio")]
+          {
+            let mut limited = reader.take(take_limit);
+            let read_fut = limited.read_to_end(&mut body);
+            let sleep = tokio::time::sleep(limits.read_timeout);
+            futures::pin_mut!(read_fut, sleep);
+            let _ = futures::future::select(read_fut, sleep).await;
+          }
+
+          #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
+          {
+            let mut limited = reader.take(take_limit);
+            let read_fut = limited.read_to_end(&mut body);
+            let sleep = async_std::task::sleep(limits.read_timeout);
+            futures::pin_mut!(read_fut, sleep);
+            let _ = futures::future::select(read_fut, sleep).await;
+          }
+
+          #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
+          {
+            let mut limited = reader.take(take_limit);
+            let read_fut = limited.read_to_end(&mut body);
+            let sleep = smol::Timer::after(limits.read_timeout);
+            futures::pin_mut!(read_fut, sleep);
+            let _ = futures::future::select(read_fut, sleep).await;
+          }
+        } else {
+          let body_started = std::time::Instant::now();
+          let mut chunk = [0u8; 1024];
+
+          loop {
+            let remaining = match limits.read_timeout.checked_sub(body_started.elapsed()) {
+              Some(value) if !value.is_zero() => value,
+              _ => break,
+            };
+
+            #[cfg(feature = "async_tokio")]
+            let read = {
+              let read_fut = reader.read(&mut chunk);
+              let sleep = tokio::time::sleep(remaining);
+              futures::pin_mut!(read_fut, sleep);
+              match futures::future::select(read_fut, sleep).await {
+                futures::future::Either::Left((result, _)) => result,
+                futures::future::Either::Right(_) => break,
+              }
+            };
+
+            #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
+            let read = {
+              let read_fut = reader.read(&mut chunk);
+              let sleep = async_std::task::sleep(remaining);
+              futures::pin_mut!(read_fut, sleep);
+              match futures::future::select(read_fut, sleep).await {
+                futures::future::Either::Left((result, _)) => result,
+                futures::future::Either::Right(_) => break,
+              }
+            };
+
+            #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
+            let read = {
+              let read_fut = reader.read(&mut chunk);
+              let sleep = smol::Timer::after(remaining);
+              futures::pin_mut!(read_fut, sleep);
+              match futures::future::select(read_fut, sleep).await {
+                futures::future::Either::Left((result, _)) => result,
+                futures::future::Either::Right(_) => break,
+              }
+            };
+
+            match read {
+              Ok(0) => break,
+              Ok(n) => {
+                body.extend_from_slice(&chunk[..n]);
+                if body.len() > limits.body_bytes {
+                  return crate::core::request::request_error(
+                    crate::core::status_code::StatusCode::PayloadTooLarge,
+                  );
+                }
+              }
+              Err(_) => break,
+            }
+          }
+        }
+
+        if body.len() > limits.body_bytes {
+          return crate::core::request::request_error(crate::core::status_code::StatusCode::PayloadTooLarge);
+        }
+        raw.extend_from_slice(&body);
+      }
+
+      crate::core::request::Request::parse_bytes_async(raw, routes, file_bases).await
+    }
+  };
 }
 
 #[cfg(any(
@@ -231,20 +318,30 @@ macro_rules! create_async_parse_stream {
   feature = "async_std",
   feature = "async_smol"
 ))]
-fn extract_body_headers(raw: &str) -> (usize, bool) {
-  let mut content_length = 0usize;
+fn extract_body_headers(raw: &str) -> Result<(usize, bool), StatusCode> {
+  let mut content_length: Option<usize> = None;
   let mut has_transfer_encoding = false;
-  for line in raw.lines() {
-    let lower = line.to_ascii_lowercase();
-    if lower.starts_with("content-length:") {
-      if let Some(len) = line.split(':').nth(1).and_then(|v| v.trim().parse::<usize>().ok()) {
-        content_length = len;
+
+  for line in raw.lines().skip(1) {
+    let Some((name, value)) = line.split_once(':') else {
+      continue;
+    };
+    if name.eq_ignore_ascii_case("content-length") {
+      if content_length.is_some() {
+        return Err(StatusCode::BadRequest);
       }
-    } else if lower.starts_with("transfer-encoding:") {
+      let length = value.trim().parse::<usize>().map_err(|_| StatusCode::BadRequest)?;
+      content_length = Some(length);
+    } else if name.eq_ignore_ascii_case("transfer-encoding") {
       has_transfer_encoding = true;
     }
   }
-  (content_length, has_transfer_encoding)
+
+  if content_length.is_some() && has_transfer_encoding {
+    return Err(StatusCode::BadRequest);
+  }
+
+  Ok((content_length.unwrap_or(0), has_transfer_encoding))
 }
 
 #[cfg(any(
@@ -339,7 +436,7 @@ pub struct Request {
   pub path: String,
   pub version: String,
   pub headers: Vec<(String, String)>,
-  pub body: String,
+  pub body: Vec<u8>,
   pub params: HashMap<String, String>,
 }
 
@@ -366,6 +463,10 @@ impl Request {
       }
     }
     sorted.into_iter().collect()
+  }
+
+  pub fn body_text(&self) -> Result<&str, std::str::Utf8Error> {
+    std::str::from_utf8(&self.body)
   }
 
   pub fn origin(&self) -> Option<&str> {
@@ -398,79 +499,139 @@ impl Request {
     stream: &TcpStream,
     routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
+    limits: &RequestLimits,
   ) -> (Self, Option<Response>) {
     use std::io::{BufRead, BufReader, Read};
-    use std::time::Duration;
+    use std::time::Instant;
 
     let mut reader = BufReader::new(stream);
-    let mut raw = String::new();
-    let header_timeout = Duration::from_millis(READ_TIMEOUT_MS);
-    let _ = stream.set_read_timeout(Some(header_timeout));
+    let mut raw: Vec<u8> = Vec::new();
+    let header_started = Instant::now();
 
-    // Read only headers
     loop {
+      let remaining = match limits.read_timeout.checked_sub(header_started.elapsed()) {
+        Some(value) if !value.is_zero() => value,
+        _ => return request_error(StatusCode::RequestTimeout),
+      };
+      let _ = stream.set_read_timeout(Some(remaining));
+
       let mut line = String::new();
-      if reader.read_line(&mut line).ok().filter(|&n| n > 0).is_none() {
-        break;
-      }
-      raw.push_str(&line);
-      if raw.contains("\r\n\r\n") {
-        break;
+      match reader.read_line(&mut line) {
+        Ok(0) => break,
+        Ok(_) => {
+          raw.extend_from_slice(line.as_bytes());
+          if raw.len() > limits.header_bytes {
+            let _ = stream.set_read_timeout(None);
+            return request_error(StatusCode::RequestHeaderFieldsTooLarge);
+          }
+          if line == "\r\n" || line == "\n" {
+            break;
+          }
+        }
+        Err(err)
+          if err.kind() == std::io::ErrorKind::WouldBlock
+            || err.kind() == std::io::ErrorKind::TimedOut =>
+        {
+          let _ = stream.set_read_timeout(None);
+          return request_error(StatusCode::RequestTimeout);
+        }
+        Err(_) => {
+          let _ = stream.set_read_timeout(None);
+          return request_error(StatusCode::BadRequest);
+        }
       }
     }
 
-    // Extract method from the first line
-    let method = raw
-      .lines()
-      .next()
-      .and_then(|l| l.split_whitespace().next())
-      .unwrap_or("");
+    let (method, content_length, has_transfer_encoding) = {
+      let head = String::from_utf8_lossy(&raw);
+      let method = head
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap_or("")
+        .to_string();
+      let (content_length, has_transfer_encoding) = match extract_body_headers(&head) {
+        Ok(value) => value,
+        Err(status) => {
+          let _ = stream.set_read_timeout(None);
+          return request_error(status);
+        }
+      };
+      (method, content_length, has_transfer_encoding)
+    };
 
-    let (content_length, has_transfer_encoding) = extract_body_headers(&raw);
-    let _ = stream.set_read_timeout(None);
+    if content_length > limits.body_bytes {
+      let _ = stream.set_read_timeout(None);
+      return request_error(StatusCode::PayloadTooLarge);
+    }
 
-    // Require Content-Length when provided; otherwise read with a short timeout to avoid blocking on keep-alive.
     if content_length > 0 {
-      // Read exactly content_length
-      let mut buf = vec![0; content_length];
-      let _ = reader.read_exact(&mut buf);
-      raw.push_str(&String::from_utf8_lossy(&buf));
-    } else if method == "POST" || method == "PUT" || method == "DELETE" || method == "PATCH" || method == "QUERY" {
+      let _ = stream.set_read_timeout(Some(limits.read_timeout));
+      let mut body = Vec::with_capacity(content_length);
+      let mut limited = reader.take(content_length as u64);
+      match limited.read_to_end(&mut body) {
+        Ok(_) if body.len() == content_length => raw.extend_from_slice(&body),
+        Ok(_) => {
+          let _ = stream.set_read_timeout(None);
+          return request_error(StatusCode::BadRequest);
+        }
+        Err(err)
+          if err.kind() == std::io::ErrorKind::WouldBlock
+            || err.kind() == std::io::ErrorKind::TimedOut =>
+        {
+          let _ = stream.set_read_timeout(None);
+          return request_error(StatusCode::RequestTimeout);
+        }
+        Err(_) => {
+          let _ = stream.set_read_timeout(None);
+          return request_error(StatusCode::BadRequest);
+        }
+      }
+    } else if matches!(method.as_str(), "POST" | "PUT" | "DELETE" | "PATCH" | "QUERY") {
+      let _ = stream.set_read_timeout(Some(limits.read_timeout));
+      let mut body = Vec::new();
+
       if has_transfer_encoding {
-        // Read all until EOF for POST/PUT/DELETE/PATCH/QUERY without Content-Length
-        let mut rest = String::new();
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MS)));
-        let _ = reader.take(BODY_READ_LIMIT_BYTES).read_to_string(&mut rest);
-        let _ = stream.set_read_timeout(None);
-        raw.push_str(&rest);
+        let mut limited = reader.take(limits.body_bytes.saturating_add(1) as u64);
+        let _ = limited.read_to_end(&mut body);
       } else {
-        // No Content-Length or Transfer-Encoding; read whatever is readily available.
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(READ_TIMEOUT_MS)));
-        let mut buf: Vec<u8> = Vec::new();
-        let mut chunk = [0u8; 128];
+        let started = Instant::now();
+        let mut chunk = [0u8; 1024];
         loop {
+          let remaining = match limits.read_timeout.checked_sub(started.elapsed()) {
+            Some(value) if !value.is_zero() => value,
+            _ => break,
+          };
+          let _ = stream.set_read_timeout(Some(remaining));
           match reader.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
-              buf.extend_from_slice(&chunk[..n]);
-              if buf.len() as u64 >= BODY_READ_LIMIT_BYTES {
-                break;
+              body.extend_from_slice(&chunk[..n]);
+              if body.len() > limits.body_bytes {
+                let _ = stream.set_read_timeout(None);
+                return request_error(StatusCode::PayloadTooLarge);
               }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(err)
+              if err.kind() == std::io::ErrorKind::WouldBlock
+                || err.kind() == std::io::ErrorKind::TimedOut =>
+            {
               break;
             }
             Err(_) => break,
           }
         }
-        let _ = stream.set_read_timeout(None);
-        if !buf.is_empty() {
-          raw.push_str(&String::from_utf8_lossy(&buf));
-        }
       }
+
+      if body.len() > limits.body_bytes {
+        let _ = stream.set_read_timeout(None);
+        return request_error(StatusCode::PayloadTooLarge);
+      }
+      raw.extend_from_slice(&body);
     }
 
-    Self::parse_raw_sync(raw, routes, file_bases)
+    let _ = stream.set_read_timeout(None);
+    Self::parse_bytes_sync(raw, routes, file_bases)
   }
 
   #[cfg(feature = "sync")]
@@ -479,67 +640,22 @@ impl Request {
     routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
   ) -> (Self, Option<Response>) {
-    if raw.trim().is_empty() {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::BadRequest.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
+    Self::parse_bytes_sync(raw.into_bytes(), routes, file_bases)
+  }
+
+  #[cfg(feature = "sync")]
+  fn parse_bytes_sync(
+    raw: Vec<u8>,
+    routes: &HashMap<(Rt, String), RouteEntry>,
+    file_bases: &[String],
+  ) -> (Self, Option<Response>) {
+    match Self::parse_bytes_only(raw, routes) {
+      Ok(mut request) => {
+        let early = request.route_sync(routes, file_bases);
+        (request, early)
+      }
+      Err(response) => (Self::default(), Some(response)),
     }
-    let parts: Vec<&str> = raw.split_whitespace().collect();
-    if parts.len() < 3 {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::BadRequest.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
-    }
-    let method_str = parts[0];
-    let path_str = parts[1];
-    let version = parts[2];
-    let allowed = [
-      "GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "CONNECT", "TRACE", "QUERY",
-    ];
-    if !allowed.contains(&method_str) {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::MethodNotAllowed.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
-    }
-    if version != "HTTP/1.1" {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::HttpVersionNotSupported.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
-    }
-    const MAX_URI: usize = 2000;
-    if path_str.len() > MAX_URI {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::UriTooLong.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
-    }
-    let mut req = Self::parse_raw_only(raw, routes);
-    let early = req.route_sync(routes, file_bases);
-    (req, early)
   }
 
   #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
@@ -548,123 +664,134 @@ impl Request {
     routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
   ) -> (Self, Option<Response>) {
-    if raw.trim().is_empty() {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::BadRequest.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
+    Self::parse_bytes_async(raw.into_bytes(), routes, file_bases).await
+  }
+
+  #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
+  async fn parse_bytes_async(
+    raw: Vec<u8>,
+    routes: &HashMap<(Rt, String), RouteEntry>,
+    file_bases: &[String],
+  ) -> (Self, Option<Response>) {
+    match Self::parse_bytes_only(raw, routes) {
+      Ok(mut request) => {
+        let early = request.route_async(routes, file_bases).await;
+        (request, early)
+      }
+      Err(response) => (Self::default(), Some(response)),
     }
-    let parts: Vec<&str> = raw.split_whitespace().collect();
-    if parts.len() < 3 {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::BadRequest.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
+  }
+
+  fn parse_bytes_only(
+    raw: Vec<u8>,
+    routes: &HashMap<(Rt, String), RouteEntry>,
+  ) -> Result<Self, Response> {
+    let separator = raw
+      .windows(4)
+      .position(|window| window == b"\r\n\r\n")
+      .ok_or_else(|| Response {
+        status: StatusCode::BadRequest.to_string(),
+        headers: vec![],
+        body: Vec::new(),
+      })?;
+
+    let head = std::str::from_utf8(&raw[..separator]).map_err(|_| Response {
+      status: StatusCode::BadRequest.to_string(),
+      headers: vec![],
+      body: Vec::new(),
+    })?;
+    let body = raw[separator + 4..].to_vec();
+
+    let mut lines = head.split("\r\n");
+    let request_line = lines.next().ok_or_else(|| Response {
+      status: StatusCode::BadRequest.to_string(),
+      headers: vec![],
+      body: Vec::new(),
+    })?;
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
+
+    if parts.len() != 3 {
+      return Err(Response {
+        status: StatusCode::BadRequest.to_string(),
+        headers: vec![],
+        body: Vec::new(),
+      });
     }
+
     let method_str = parts[0];
     let path_str = parts[1];
     let version = parts[2];
     let allowed = [
       "GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH", "CONNECT", "TRACE", "QUERY",
     ];
+
     if !allowed.contains(&method_str) {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::MethodNotAllowed.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
+      return Err(Response {
+        status: StatusCode::MethodNotAllowed.to_string(),
+        headers: vec![],
+        body: Vec::new(),
+      });
     }
     if version != "HTTP/1.1" {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::HttpVersionNotSupported.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
+      return Err(Response {
+        status: StatusCode::HttpVersionNotSupported.to_string(),
+        headers: vec![],
+        body: Vec::new(),
+      });
     }
+
     const MAX_URI: usize = 2000;
     if path_str.len() > MAX_URI {
-      return (
-        Self::default(),
-        Some(Response {
-          status: StatusCode::UriTooLong.to_string(),
-          headers: vec![],
-          body: Vec::new(),
-        }),
-      );
+      return Err(Response {
+        status: StatusCode::UriTooLong.to_string(),
+        headers: vec![],
+        body: Vec::new(),
+      });
     }
-    let mut req = Self::parse_raw_only(raw, routes);
-    // route is async under these features, await it here
-    let early = req.route_async(routes, file_bases).await;
-    (req, early)
-  }
 
-  fn parse_raw_only(raw: String, routes: &HashMap<(Rt, String), RouteEntry>) -> Self {
-    let lines: Vec<&str> = raw.split("\r\n").collect();
-    let mut cut = 0;
-    for (i, &l) in lines.iter().enumerate() {
-      if l.trim().is_empty() {
-        cut = i;
-        break;
-      }
-    }
-    let headers = lines[..cut]
-      .iter()
-      .filter_map(|&h| {
-        let p: Vec<&str> = h.split(": ").collect();
-        (p.len() == 2).then(|| (p[0].to_string(), p[1].to_string()))
+    let headers = lines
+      .filter_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        Some((name.to_string(), value.trim_start().to_string()))
       })
       .collect();
-    let body = lines[cut + 1..].join("\r\n");
-    let parts: Vec<&str> = raw.split_whitespace().collect();
-    let mut path = parts[1].to_string();
+
+    let mut path = path_str.to_string();
     let mut params = HashMap::new();
-    let query_opt = if let Some(qpos) = path.find('?') {
-      let qs = path[qpos + 1..].to_string();
-      path.truncate(qpos);
-      Some(qs)
+    let query = if let Some(position) = path.find('?') {
+      let query = path[position + 1..].to_string();
+      path.truncate(position);
+      Some(query)
     } else {
       None
     };
+
     for (method, route_path) in routes.keys() {
-      if *method == RequestType::from_str(parts[0]) {
+      if *method == RequestType::from_str(method_str) {
         let path_params = Self::extract_params(route_path, &path);
         if !path_params.is_empty() {
-          for (key, value) in path_params {
-            params.insert(key, value);
-          }
+          params.extend(path_params);
           break;
         }
       }
     }
-    if let Some(qs) = query_opt {
-      for p in qs.split('&') {
-        if let Some(eq) = p.find('=') {
-          params.insert(p[..eq].to_string(), p[eq + 1..].to_string());
+
+    if let Some(query) = query {
+      for pair in query.split('&') {
+        if let Some((key, value)) = pair.split_once('=') {
+          params.insert(key.to_string(), value.to_string());
         }
       }
     }
-    Request {
-      method: RequestType::from_str(parts[0]),
+
+    Ok(Request {
+      method: RequestType::from_str(method_str),
       path,
-      version: parts[2].to_string(),
+      version: version.to_string(),
       headers,
       body,
       params,
-    }
+    })
   }
 
   #[cfg(feature = "sync")]
@@ -754,7 +881,7 @@ impl Default for Request {
       path: String::new(),
       version: String::new(),
       headers: vec![],
-      body: String::new(),
+      body: Vec::new(),
       params: HashMap::new(),
     }
   }
@@ -785,6 +912,7 @@ impl Display for Request {
         .collect();
       format!("{{{}}}", parts.join(", "))
     };
+    let body = String::from_utf8_lossy(&self.body);
     write!(
       f,
       "Method: {}\n\
@@ -793,7 +921,7 @@ impl Display for Request {
        Headers: {:#?},\n\
        Body: {}\n\
        Params: {}",
-      self.method, self.path, self.version, self.headers, self.body, params_str
+      self.method, self.path, self.version, self.headers, body, params_str
     )
   }
 }
