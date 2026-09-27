@@ -118,6 +118,7 @@ fn find_crlf(bytes: &[u8]) -> Option<usize> {
 fn take_framed_request(
   buffer: &mut Vec<u8>,
   limits: &RequestLimits,
+  idle_end: bool,
 ) -> Result<Option<Vec<u8>>, crate::core::status_code::StatusCode> {
   use crate::core::status_code::StatusCode;
 
@@ -137,7 +138,27 @@ fn take_framed_request(
   let framing = extract_body_headers(head)?;
 
   match framing {
-    BodyFraming::None => Ok(Some(buffer.drain(..head_end).collect())),
+    BodyFraming::None => {
+      let method = head
+        .split("\r\n")
+        .next()
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap_or("");
+      let unframed_body = matches!(method, "POST" | "PUT" | "DELETE" | "PATCH" | "QUERY");
+
+      if unframed_body {
+        let body_len = buffer.len().saturating_sub(head_end);
+        if body_len > limits.body_bytes {
+          return Err(StatusCode::PayloadTooLarge);
+        }
+        if !idle_end {
+          return Ok(None);
+        }
+        return Ok(Some(buffer.drain(..).collect()));
+      }
+
+      Ok(Some(buffer.drain(..head_end).collect()))
+    }
     BodyFraming::Length(length) => {
       if length > limits.body_bytes {
         return Err(StatusCode::PayloadTooLarge);
@@ -264,7 +285,7 @@ macro_rules! create_async_parse_stream {
       };
 
       loop {
-        match crate::core::request::take_framed_request(buffer, limits) {
+        match crate::core::request::take_framed_request(buffer, limits, false) {
           Ok(Some(raw)) => {
             let (request, early) =
               crate::core::request::Request::parse_raw_async(raw, routes, file_bases).await;
@@ -310,33 +331,19 @@ macro_rules! create_async_parse_stream {
         #[cfg(feature = "async_tokio")]
         let read = match tokio::time::timeout(wait, stream.read(&mut chunk)).await {
           Ok(result) => result,
-          Err(_) => {
-            return if started.is_some() {
-              crate::core::request::StreamRead::Error(
-                crate::core::request::error_response(
-                  crate::core::status_code::StatusCode::RequestTimeout,
-                ),
-              )
-            } else {
-              crate::core::request::StreamRead::Idle
-            };
-          }
+          Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "request read timed out",
+          )),
         };
 
         #[cfg(all(feature = "async_std", not(feature = "async_tokio")))]
         let read = match async_std::future::timeout(wait, stream.read(&mut chunk)).await {
           Ok(result) => result,
-          Err(_) => {
-            return if started.is_some() {
-              crate::core::request::StreamRead::Error(
-                crate::core::request::error_response(
-                  crate::core::status_code::StatusCode::RequestTimeout,
-                ),
-              )
-            } else {
-              crate::core::request::StreamRead::Idle
-            };
-          }
+          Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "request read timed out",
+          )),
         };
 
         #[cfg(all(feature = "async_smol", not(any(feature = "async_tokio", feature = "async_std"))))]
@@ -378,15 +385,29 @@ macro_rules! create_async_parse_stream {
             if error.kind() == std::io::ErrorKind::TimedOut
               || error.kind() == std::io::ErrorKind::WouldBlock =>
           {
-            return if started.is_some() {
-              crate::core::request::StreamRead::Error(
-                crate::core::request::error_response(
-                  crate::core::status_code::StatusCode::RequestTimeout,
-                ),
-              )
-            } else {
-              crate::core::request::StreamRead::Idle
-            };
+            if started.is_none() {
+              return crate::core::request::StreamRead::Idle;
+            }
+
+            match crate::core::request::take_framed_request(buffer, limits, true) {
+              Ok(Some(raw)) => {
+                let (request, early) =
+                  crate::core::request::Request::parse_raw_async(raw, routes, file_bases).await;
+                return crate::core::request::StreamRead::Ready(request, early);
+              }
+              Ok(None) => {
+                return crate::core::request::StreamRead::Error(
+                  crate::core::request::error_response(
+                    crate::core::status_code::StatusCode::RequestTimeout,
+                  ),
+                );
+              }
+              Err(status) => {
+                return crate::core::request::StreamRead::Error(
+                  crate::core::request::error_response(status),
+                );
+              }
+            }
           }
           Err(_) => {
             return crate::core::request::StreamRead::Error(
@@ -579,7 +600,7 @@ impl Request {
     };
 
     loop {
-      match take_framed_request(buffer, limits) {
+      match take_framed_request(buffer, limits, false) {
         Ok(Some(raw)) => {
           let (request, early) = Self::parse_raw_sync(raw, routes, file_bases);
           let _ = stream.set_read_timeout(None);
@@ -636,11 +657,18 @@ impl Request {
             || error.kind() == std::io::ErrorKind::WouldBlock =>
         {
           let _ = stream.set_read_timeout(None);
-          return if started.is_some() {
-            StreamRead::Error(error_response(StatusCode::RequestTimeout))
-          } else {
-            StreamRead::Idle
-          };
+          if started.is_none() {
+            return StreamRead::Idle;
+          }
+
+          match take_framed_request(buffer, limits, true) {
+            Ok(Some(raw)) => {
+              let (request, early) = Self::parse_raw_sync(raw, routes, file_bases);
+              return StreamRead::Ready(request, early);
+            }
+            Ok(None) => return StreamRead::Error(error_response(StatusCode::RequestTimeout)),
+            Err(status) => return StreamRead::Error(error_response(status)),
+          }
         }
         Err(_) => {
           let _ = stream.set_read_timeout(None);
@@ -971,7 +999,7 @@ mod request_tests {
     let mut buffer = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\nGET /next HTTP/1.1\r\n\r\n".to_vec();
     let limits = RequestLimits::default();
 
-    let raw = take_framed_request(&mut buffer, &limits)
+    let raw = take_framed_request(&mut buffer, &limits, false)
       .expect("valid framing")
       .expect("complete request");
     let request = Request::parse_raw_only(raw, &HashMap::new()).expect("valid request");
@@ -985,7 +1013,7 @@ mod request_tests {
     let mut buffer = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3;foo=bar\r\nabc\r\n0\r\nX-Test: yes\r\n\r\n".to_vec();
     let limits = RequestLimits::default();
 
-    let raw = take_framed_request(&mut buffer, &limits)
+    let raw = take_framed_request(&mut buffer, &limits, false)
       .expect("valid framing")
       .expect("complete request");
     let request = Request::parse_raw_only(raw, &HashMap::new()).expect("valid request");
@@ -1007,7 +1035,7 @@ mod request_tests {
     let mut buffer = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\ntest\r\n0\r\n\r\n".to_vec();
 
     assert_eq!(
-      take_framed_request(&mut buffer, &limits),
+      take_framed_request(&mut buffer, &limits, false),
       Err(StatusCode::PayloadTooLarge)
     );
   }
