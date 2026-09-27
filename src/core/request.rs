@@ -965,4 +965,50 @@ mod request_tests {
     let mixed = "POST / HTTP/1.1\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n";
     assert_eq!(extract_body_headers(mixed), Err(StatusCode::BadRequest));
   }
+
+  #[test]
+  fn decodes_chunked_body_and_preserves_pipelined_request() {
+    let mut buffer = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\nGET /next HTTP/1.1\r\n\r\n".to_vec();
+    let limits = RequestLimits::default();
+
+    let raw = take_framed_request(&mut buffer, &limits)
+      .expect("valid framing")
+      .expect("complete request");
+    let request = Request::parse_raw_only(raw, &HashMap::new()).expect("valid request");
+
+    assert_eq!(request.body, b"Wikipedia");
+    assert_eq!(buffer, b"GET /next HTTP/1.1\r\n\r\n");
+  }
+
+  #[test]
+  fn supports_chunk_extensions_and_trailers() {
+    let mut buffer = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3;foo=bar\r\nabc\r\n0\r\nX-Test: yes\r\n\r\n".to_vec();
+    let limits = RequestLimits::default();
+
+    let raw = take_framed_request(&mut buffer, &limits)
+      .expect("valid framing")
+      .expect("complete request");
+    let request = Request::parse_raw_only(raw, &HashMap::new()).expect("valid request");
+
+    assert_eq!(request.body, b"abc");
+    assert!(buffer.is_empty());
+  }
+
+  #[test]
+  fn rejects_unsupported_transfer_coding() {
+    let raw = "POST / HTTP/1.1\r\nTransfer-Encoding: gzip, chunked\r\n\r\n";
+    assert_eq!(extract_body_headers(raw), Err(StatusCode::NotImplemented));
+  }
+
+  #[test]
+  fn enforces_chunked_body_limit() {
+    let mut limits = RequestLimits::default();
+    limits.body_bytes = 3;
+    let mut buffer = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\ntest\r\n0\r\n\r\n".to_vec();
+
+    assert_eq!(
+      take_framed_request(&mut buffer, &limits),
+      Err(StatusCode::PayloadTooLarge)
+    );
+  }
 }
