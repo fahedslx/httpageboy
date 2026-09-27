@@ -126,20 +126,23 @@ impl Server {
       };
       if resp.status.starts_with("101 ") {
         if let Some(upgrade) = upgrade {
-          shared::send_response(
+          if !shared::send_response(
             &mut stream,
             &resp,
             false,
             cors_policy.as_deref(),
             origin.as_deref(),
           )
-          .await;
+          .await
+          {
+            return;
+          }
           upgrade.handle(req, stream).await;
           return;
         }
       }
 
-      shared::send_response(
+      let _ = shared::send_response(
         &mut stream,
         &resp,
         close_flag,

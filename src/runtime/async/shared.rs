@@ -4,6 +4,7 @@ use crate::core::request_type::Rt;
 use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
 use crate::runtime::shared as runtime_shared;
+use crate::runtime::shared::INTERNAL_SERVER_ERROR_HEAD;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::io::Result;
@@ -26,14 +27,21 @@ pub async fn send_response<S: AsyncStream>(
   close: bool,
   cors: Option<&CorsPolicy>,
   origin: Option<&str>,
-) {
-  let head = runtime_shared::response_head(resp, close, cors, origin);
+) -> bool {
+  let Some(head) = runtime_shared::response_head(resp, close, cors, origin) else {
+    let _ = stream.write_all(INTERNAL_SERVER_ERROR_HEAD.as_bytes()).await;
+    let _ = stream.flush().await;
+    let _ = stream.shutdown().await;
+    return false;
+  };
+
   let _ = stream.write_all(head.as_bytes()).await;
   let _ = stream.write_all(&resp.body).await;
   let _ = stream.flush().await;
   if close {
     let _ = stream.shutdown().await;
   }
+  true
 }
 
 /// A generic server implementation that is parameterized over a listener type.

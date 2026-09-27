@@ -5,7 +5,9 @@ use crate::core::request::{Request, RequestLimits, handle_request_sync};
 use crate::core::request_type::Rt;
 use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
-use crate::runtime::shared::{file_source_path, print_server_info, response_head, response_or_default};
+use crate::runtime::shared::{
+  INTERNAL_SERVER_ERROR_HEAD, file_source_path, print_server_info, response_head, response_or_default,
+};
 use crate::runtime::sync::threadpool::ThreadPool;
 use std::collections::HashMap;
 use std::io::prelude::Write;
@@ -152,13 +154,15 @@ impl Server {
 
       if response.status.starts_with("101 ") {
         if let Some(upgrade) = upgrade {
-          Self::send_response(&mut stream, &response, false, cors_policy.as_deref(), origin.as_deref());
+          if !Self::send_response(&mut stream, &response, false, cors_policy.as_deref(), origin.as_deref()) {
+            return;
+          }
           futures::executor::block_on(upgrade.handle(request, stream));
           return;
         }
       }
 
-      Self::send_response(
+      let _ = Self::send_response(
         &mut stream,
         &response,
         close_flag,
@@ -174,14 +178,20 @@ impl Server {
     close: bool,
     cors: Option<&CorsPolicy>,
     origin: Option<&str>,
-  ) {
-    let header = response_head(response, close, cors, origin);
+  ) -> bool {
+    let Some(header) = response_head(response, close, cors, origin) else {
+      let _ = stream.write_all(INTERNAL_SERVER_ERROR_HEAD.as_bytes());
+      let _ = stream.flush();
+      let _ = stream.shutdown(Shutdown::Both);
+      return false;
+    };
+
     let _ = stream.write_all(header.as_bytes());
     let _ = stream.write_all(&response.body);
-
     let _ = stream.flush();
     if close {
       let _ = stream.shutdown(Shutdown::Both);
     }
+    true
   }
 }

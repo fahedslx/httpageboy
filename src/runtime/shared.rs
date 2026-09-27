@@ -33,18 +33,31 @@ where
     .unwrap_or(source)
 }
 
-pub fn response_head(response: &Response, close: bool, cors: Option<&CorsPolicy>, origin: Option<&str>) -> String {
+pub const INTERNAL_SERVER_ERROR_HEAD: &str =
+  "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+fn valid_header_part(value: &str) -> bool {
+  !value.contains('\r') && !value.contains('\n')
+}
+
+pub fn response_head(
+  response: &Response,
+  close: bool,
+  cors: Option<&CorsPolicy>,
+  origin: Option<&str>,
+) -> Option<String> {
   let switching_protocols = response.status.starts_with("101 ");
   let mut header = format!("HTTP/1.1 {}\r\n", response.status);
 
   for (key, value) in &response.headers {
+    if !valid_header_part(key) || !valid_header_part(value) {
+      return None;
+    }
     if key.eq_ignore_ascii_case("content-length") {
       continue;
     }
-    if key.eq_ignore_ascii_case("connection") {
-      if close {
-        continue;
-      }
+    if key.eq_ignore_ascii_case("connection") && close {
+      continue;
     }
     header.push_str(&format!("{}: {}\r\n", key, value));
   }
@@ -57,11 +70,14 @@ pub fn response_head(response: &Response, close: bool, cors: Option<&CorsPolicy>
   }
   if let Some(policy) = cors {
     for (key, value) in policy.header_lines(origin) {
+      if !valid_header_part(&key) || !valid_header_part(&value) {
+        return None;
+      }
       header.push_str(&format!("{}: {}\r\n", key, value));
     }
   }
   header.push_str("\r\n");
-  header
+  Some(header)
 }
 
 pub fn response_or_default(response: Option<Response>, method: &RequestType, cors: Option<&CorsPolicy>) -> Response {
@@ -92,11 +108,21 @@ mod tests {
       body: Vec::new(),
     };
 
-    let head = response_head(&response, false, None, None);
+    let head = response_head(&response, false, None, None).expect("valid response headers");
 
     assert!(head.contains("HTTP/1.1 101 Switching Protocols"));
     assert!(head.contains("Upgrade: websocket"));
     assert!(head.contains("Connection: Upgrade"));
     assert!(!head.contains("Content-Length"));
+  }
+  #[test]
+  fn rejects_crlf_in_response_headers() {
+    let response = Response {
+      status: StatusCode::Ok.to_string(),
+      headers: vec![("X-Test".into(), "ok\r\nX-Injected: yes".into())],
+      body: Vec::new(),
+    };
+
+    assert!(response_head(&response, true, None, None).is_none());
   }
 }
