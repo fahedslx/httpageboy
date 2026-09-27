@@ -46,7 +46,7 @@ pub fn response_head(
   cors: Option<&CorsPolicy>,
   origin: Option<&str>,
 ) -> Option<String> {
-  let switching_protocols = response.status.starts_with("101 ");
+  let switching_protocols = response.status == crate::StatusCode::SwitchingProtocols;
   let mut header = format!("HTTP/1.1 {}\r\n", response.status);
 
   for (key, value) in &response.headers {
@@ -100,12 +100,12 @@ mod tests {
   #[test]
   fn switching_protocols_preserves_upgrade_headers_without_content_length() {
     let response = Response {
-      status: StatusCode::SwitchingProtocols.to_string(),
+      status: StatusCode::SwitchingProtocols,
       headers: vec![
         ("Upgrade".into(), "websocket".into()),
         ("Connection".into(), "Upgrade".into()),
       ],
-      body: Vec::new(),
+      body: Vec::new().into(),
     };
 
     let head = response_head(&response, false, None, None).expect("valid response headers");
@@ -118,9 +118,9 @@ mod tests {
   #[test]
   fn rejects_crlf_in_response_headers() {
     let response = Response {
-      status: StatusCode::Ok.to_string(),
+      status: StatusCode::Ok,
       headers: vec![("X-Test".into(), "ok\r\nX-Injected: yes".into())],
-      body: Vec::new(),
+      body: Vec::new().into(),
     };
 
     assert!(response_head(&response, true, None, None).is_none());

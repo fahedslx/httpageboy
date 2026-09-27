@@ -187,7 +187,7 @@ impl Server {
     };
 
     let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(&response.body);
+    let _ = stream.write_all(response.body.as_ref());
     let _ = stream.flush();
     if close {
       let _ = stream.shutdown(Shutdown::Both);

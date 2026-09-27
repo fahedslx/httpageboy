@@ -17,7 +17,7 @@ use httpageboy::{Request, Response, Rt, Server, StatusCode, route};
 #[cfg(feature = "sync")]
 fn demo_get(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "<!DOCTYPE html><html><head>\
 <meta charset=\"utf-8\">\
@@ -38,7 +38,7 @@ async fn demo_get(_request: &Request) -> Response {
   SmolTimer::after(Duration::from_millis(100)).await;
 
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "<!DOCTYPE html><html><head>\
 <meta charset=\"utf-8\">\
@@ -58,9 +58,9 @@ async fn demo_get(_request: &Request) -> Response {
 ))]
 fn query_response(request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: format!("QUERY: {}", std::str::from_utf8(&request.body).unwrap_or("")).into_bytes(),
+    body: format!("QUERY: {}", request.body_text().unwrap_or("")).into_bytes(),
   }
 }
 

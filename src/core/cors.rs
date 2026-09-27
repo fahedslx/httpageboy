@@ -74,9 +74,9 @@ impl CorsPolicy {
 
   pub fn preflight_response(&self) -> Response {
     Response {
-      status: StatusCode::NoContent.to_string(),
+      status: StatusCode::NoContent,
       headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
-      body: Vec::new(),
+      body: Vec::new().into(),
     }
   }
 }

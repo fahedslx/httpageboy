@@ -22,9 +22,9 @@ use httpageboy::{route, Request, Rt, Response, Server, StatusCode};
 async fn demo(_req: &Request) -> Response {
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: b"ok".to_vec(),
+    body: "ok".into(),
   }
 }
 
@@ -84,24 +84,24 @@ Response now supports arbitrary headers:
 
 ```rust
 Response {
-  status: StatusCode::Ok.to_string(),
+  status: StatusCode::Ok,
   headers: vec![("Content-Type".into(), "application/json".into())],
   body: br#"{"ok":true}"#.to_vec(),
 }
 
 Response {
-  status: StatusCode::TemporaryRedirect.to_string(),
+  status: StatusCode::TemporaryRedirect,
   headers: vec![
     ("Location".into(), "https://example.com".into()),
     ("Content-Type".into(), "text/plain".into()),
   ],
-  body: Vec::new(),
+  body: Vec::new().into(),
 }
 ```
 
 ## Request body
 
-`Request.body` stores bytes; use `std::str::from_utf8(&request.body)` when text is expected.
+`Request.body` stores bytes; use `request.body_text()` when text is expected.
 
 ## Testing
 
@@ -127,9 +127,9 @@ fn server_factory() -> Server {
 
 fn home(_req: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: b"home".to_vec(),
+    body: "home".into(),
   }
 }
 
@@ -173,9 +173,9 @@ async fn server_factory() -> Server {
 
 async fn home(_req: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: b"home".to_vec(),
+    body: "home".into(),
   }
 }
 

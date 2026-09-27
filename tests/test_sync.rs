@@ -76,7 +76,7 @@ fn run_strict(request: &[u8], expected: &[u8]) -> String {
 
 fn demo_handle_home(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "home".as_bytes().to_vec(),
   }
@@ -91,19 +91,19 @@ fn demo_handle_post(_request: &Request) -> Response {
 
   let request_string = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, ordered, std::str::from_utf8(&_request.body).unwrap_or("")
+    _request.method, _request.path, ordered, _request.body_text().unwrap_or("")
   );
 
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: request_string.as_bytes().to_vec(),
+    body: request_string.into(),
   }
 }
 
 fn demo_handle_get(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "get".as_bytes().to_vec(),
   }
@@ -112,18 +112,18 @@ fn demo_handle_get(_request: &Request) -> Response {
 fn demo_handle_put(_request: &Request) -> Response {
   let request_string = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, _request.params, std::str::from_utf8(&_request.body).unwrap_or("")
+    _request.method, _request.path, _request.params, _request.body_text().unwrap_or("")
   );
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: request_string.as_bytes().to_vec(),
+    body: request_string.into(),
   }
 }
 
 fn demo_handle_delete(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "delete".as_bytes().to_vec(),
   }
@@ -131,7 +131,7 @@ fn demo_handle_delete(_request: &Request) -> Response {
 
 fn demo_handle_head(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "head".as_bytes().to_vec(),
   }
@@ -139,7 +139,7 @@ fn demo_handle_head(_request: &Request) -> Response {
 
 fn demo_handle_options(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "options".as_bytes().to_vec(),
   }
@@ -147,7 +147,7 @@ fn demo_handle_options(_request: &Request) -> Response {
 
 fn demo_handle_connect(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "connect".as_bytes().to_vec(),
   }
@@ -155,7 +155,7 @@ fn demo_handle_connect(_request: &Request) -> Response {
 
 fn demo_handle_trace(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
     body: "trace".as_bytes().to_vec(),
   }
@@ -163,39 +163,39 @@ fn demo_handle_trace(_request: &Request) -> Response {
 
 fn demo_handle_query(request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: format!("query:{}", std::str::from_utf8(&request.body).unwrap_or("")).into_bytes(),
+    body: format!("query:{}", request.body_text().unwrap_or("")).into_bytes(),
   }
 }
 
 fn demo_handle_redirect(_request: &Request) -> Response {
   Response {
-    status: StatusCode::TemporaryRedirect.to_string(),
+    status: StatusCode::TemporaryRedirect,
     headers: vec![
       ("Location".to_string(), "https://example.com".to_string()),
       ("Content-Type".to_string(), "text/plain".to_string()),
     ],
-    body: Vec::new(),
+    body: Vec::new().into(),
   }
 }
 
 fn demo_handle_json(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".to_string(), "application/json".to_string())],
-    body: br#"{"ok":true}"#.to_vec(),
+    body: br#"{"ok":true}"#.into(),
   }
 }
 
 fn demo_handle_custom_header(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![
       ("Content-Type".to_string(), "text/plain".to_string()),
       ("X-Trace-Id".to_string(), "abc-123".to_string()),
     ],
-    body: b"custom".to_vec(),
+    body: b"custom".into(),
   }
 }
 

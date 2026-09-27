@@ -36,7 +36,7 @@ pub async fn send_response<S: AsyncStream>(
   };
 
   let _ = stream.write_all(head.as_bytes()).await;
-  let _ = stream.write_all(&resp.body).await;
+  let _ = stream.write_all(resp.body.as_ref()).await;
   let _ = stream.flush().await;
   if close {
     let _ = stream.shutdown().await;

@@ -31,9 +31,9 @@ fn request_error(
   (
     crate::core::request::Request::default(),
     Some(crate::core::response::Response {
-      status: status.to_string(),
+      status,
       headers: vec![],
-      body: Vec::new(),
+      body: Vec::new().into(),
     }),
   )
 }
@@ -465,6 +465,10 @@ impl Request {
     sorted.into_iter().collect()
   }
 
+  pub fn body_text(&self) -> Result<&str, std::str::Utf8Error> {
+    std::str::from_utf8(&self.body)
+  }
+
   pub fn origin(&self) -> Option<&str> {
     self
       .headers
@@ -668,31 +672,31 @@ impl Request {
       .windows(4)
       .position(|window| window == b"\r\n\r\n")
       .ok_or_else(|| Response {
-        status: StatusCode::BadRequest.to_string(),
+        status: StatusCode::BadRequest,
         headers: vec![],
-        body: Vec::new(),
+        body: Vec::new().into(),
       })?;
 
     let head = std::str::from_utf8(&raw[..separator]).map_err(|_| Response {
-      status: StatusCode::BadRequest.to_string(),
+      status: StatusCode::BadRequest,
       headers: vec![],
-      body: Vec::new(),
+      body: Vec::new().into(),
     })?;
     let body = raw[separator + 4..].to_vec();
 
     let mut lines = head.split("\r\n");
     let request_line = lines.next().ok_or_else(|| Response {
-      status: StatusCode::BadRequest.to_string(),
+      status: StatusCode::BadRequest,
       headers: vec![],
-      body: Vec::new(),
+      body: Vec::new().into(),
     })?;
     let parts: Vec<&str> = request_line.split_whitespace().collect();
 
     if parts.len() != 3 {
       return Err(Response {
-        status: StatusCode::BadRequest.to_string(),
+        status: StatusCode::BadRequest,
         headers: vec![],
-        body: Vec::new(),
+        body: Vec::new().into(),
       });
     }
 
@@ -705,25 +709,25 @@ impl Request {
 
     if !allowed.contains(&method_str) {
       return Err(Response {
-        status: StatusCode::MethodNotAllowed.to_string(),
+        status: StatusCode::MethodNotAllowed,
         headers: vec![],
-        body: Vec::new(),
+        body: Vec::new().into(),
       });
     }
     if version != "HTTP/1.1" {
       return Err(Response {
-        status: StatusCode::HttpVersionNotSupported.to_string(),
+        status: StatusCode::HttpVersionNotSupported,
         headers: vec![],
-        body: Vec::new(),
+        body: Vec::new().into(),
       });
     }
 
     const MAX_URI: usize = 2000;
     if path_str.len() > MAX_URI {
       return Err(Response {
-        status: StatusCode::UriTooLong.to_string(),
+        status: StatusCode::UriTooLong,
         headers: vec![],
-        body: Vec::new(),
+        body: Vec::new().into(),
       });
     }
 
@@ -832,12 +836,12 @@ impl Request {
       if let Some(real_path) = crate::core::utils::secure_path(base_path, &self.path) {
         if let Ok(data) = std::fs::read(&real_path) {
           return Response {
-            status: StatusCode::Ok.to_string(),
+            status: StatusCode::Ok,
             headers: vec![(
               "Content-Type".to_string(),
               crate::core::utils::get_content_type_quick(&real_path),
             )],
-            body: data,
+            body: data.into(),
           };
         }
       }
@@ -859,7 +863,7 @@ impl Default for Request {
       path: String::new(),
       version: String::new(),
       headers: vec![],
-      body: Vec::new(),
+      body: Vec::new().into(),
       params: HashMap::new(),
     }
   }
@@ -934,7 +938,7 @@ mod request_tests {
     let request = Request::parse_raw_only(raw, &HashMap::new()).expect("valid request");
 
     assert_eq!(request.body, vec![0x00, 0xff, 0x01, 0x02]);
-    assert!(std::str::from_utf8(&request.body).is_err());
+    assert!(request.body_text().is_err());
   }
 
   #[test]
