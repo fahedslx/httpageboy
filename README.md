@@ -31,6 +31,11 @@ async fn demo(_req: &Request) -> Response {
 #[tokio::main]
 async fn main() {
   let mut srv = Server::new("127.0.0.1:7878").await.unwrap();
+
+  // srv.set_body_limit(8 * 1024 * 1024);
+  // srv.set_header_limit(64 * 1024);
+  // srv.set_read_timeout(std::time::Duration::from_secs(5));
+
   srv.routes([route!("/", Rt::GET, demo)]);
   srv.run().await;
 }
@@ -94,23 +99,9 @@ Response {
 }
 ```
 
-## Request bodies and limits
+## Request body
 
-Request bodies are stored as bytes so text and binary payloads are preserved. Text handlers can use:
-
-```rust
-let text = request.body_text()?;
-```
-
-Limits have defaults and can be changed independently:
-
-```rust
-server.set_body_limit(8 * 1024 * 1024);
-server.set_header_limit(64 * 1024);
-server.set_read_timeout(std::time::Duration::from_secs(5));
-```
-
-Only the settings you call are changed; the remaining defaults stay active.
+`Request.body` stores bytes; use `request.body_text()` when text is expected.
 
 ## Testing
 
