@@ -86,7 +86,7 @@ Response now supports arbitrary headers:
 Response {
   status: StatusCode::Ok,
   headers: vec![("Content-Type".into(), "application/json".into())],
-  body: br#"{"ok":true}"#.to_vec(),
+  body: br#"{"ok":true}"#.into(),
 }
 
 Response {

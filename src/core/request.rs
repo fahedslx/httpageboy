@@ -863,7 +863,7 @@ impl Default for Request {
       path: String::new(),
       version: String::new(),
       headers: vec![],
-      body: Vec::new().into(),
+      body: Vec::new(),
       params: HashMap::new(),
     }
   }
