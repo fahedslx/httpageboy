@@ -78,7 +78,7 @@ fn demo_handle_home(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: "home".as_bytes().to_vec(),
+    body: "home".into(),
   }
 }
 
@@ -105,7 +105,7 @@ fn demo_handle_get(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: "get".as_bytes().to_vec(),
+    body: "get".into(),
   }
 }
 
@@ -125,7 +125,7 @@ fn demo_handle_delete(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: "delete".as_bytes().to_vec(),
+    body: "delete".into(),
   }
 }
 
@@ -133,7 +133,7 @@ fn demo_handle_head(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: "head".as_bytes().to_vec(),
+    body: "head".into(),
   }
 }
 
@@ -141,7 +141,7 @@ fn demo_handle_options(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: "options".as_bytes().to_vec(),
+    body: "options".into(),
   }
 }
 
@@ -149,7 +149,7 @@ fn demo_handle_connect(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: "connect".as_bytes().to_vec(),
+    body: "connect".into(),
   }
 }
 
@@ -157,7 +157,7 @@ fn demo_handle_trace(_request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: "trace".as_bytes().to_vec(),
+    body: "trace".into(),
   }
 }
 
@@ -165,7 +165,7 @@ fn demo_handle_query(request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: format!("query:{}", request.body_text().unwrap_or("")).into_bytes(),
+    body: format!("query:{}", request.body_text().unwrap_or("")).into(),
   }
 }
 

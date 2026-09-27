@@ -23,8 +23,7 @@ fn demo_get(_request: &Request) -> Response {
 <meta charset=\"utf-8\">\
 </head><body>🤓: Hi, this is Pageboy working.
 <br>Do you like the <a href=\"/HTTPageboy.svg\">new icon</a>?</body></html>"
-      .as_bytes()
-      .to_vec(),
+      .into(),
   }
 }
 
@@ -44,8 +43,7 @@ async fn demo_get(_request: &Request) -> Response {
 <meta charset=\"utf-8\">\
 </head><body>🤓: Hi, this is Pageboy working.
 <br>Do you like the <a href=\"/HTTPageboy.svg\">new icon</a>?</body></html>"
-      .as_bytes()
-      .to_vec(),
+      .into(),
   }
 }
 
@@ -60,7 +58,7 @@ fn query_response(request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: format!("QUERY: {}", request.body_text().unwrap_or("")).into_bytes(),
+    body: format!("QUERY: {}", request.body_text().unwrap_or("")).into(),
   }
 }
 

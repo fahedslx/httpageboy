@@ -169,7 +169,7 @@ async fn demo_handle_query(request: &Request) -> Response {
   Response {
     status: StatusCode::Ok,
     headers: vec![],
-    body: format!("query:{}", request.body_text().unwrap_or("")).into_bytes(),
+    body: format!("query:{}", request.body_text().unwrap_or("")).into(),
   }
 }
 
