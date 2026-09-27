@@ -274,7 +274,7 @@ fn test_get_with_content_length_larger_than_body() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
-    let expected = b"get";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
@@ -385,7 +385,7 @@ fn test_post_with_larger_content_length() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
-    let expected = b"HTTP/1.1 200 OK";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
@@ -440,7 +440,7 @@ fn test_put_with_larger_content_length() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
-    let expected = b"HTTP/1.1 200 OK";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
@@ -572,7 +572,7 @@ fn test_delete_with_content_length_larger_than_body() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
-    let expected = b"delete";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });

@@ -251,7 +251,7 @@ fn test_get_with_content_length_smaller_than_body() {
 fn test_get_with_content_length_larger_than_body() {
   boot_regular();
   let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
-  let expected_response = b"get";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 
@@ -359,7 +359,7 @@ fn test_post_with_smaller_content_length() {
 fn test_post_with_larger_content_length() {
   boot_regular();
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
-  let expected_response = b"HTTP/1.1 200 OK";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 
@@ -399,7 +399,7 @@ fn test_put_with_smaller_content_length() {
 fn test_put_with_larger_content_length() {
   boot_regular();
   let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
-  let expected_response = b"HTTP/1.1 200 OK";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 
@@ -495,7 +495,7 @@ fn test_delete_with_content_length_smaller_than_body() {
 fn test_delete_with_content_length_larger_than_body() {
   boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
-  let expected_response = b"delete";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 

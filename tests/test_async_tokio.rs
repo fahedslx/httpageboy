@@ -261,7 +261,7 @@ async fn test_get_with_content_length_smaller_than_body() {
 async fn test_get_with_content_length_larger_than_body() {
   boot_regular().await;
   let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
-  let expected = b"get";
+  let expected = b"HTTP/1.1 400 Bad Request";
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   run_regular(request, expected).await;
 }
@@ -352,7 +352,7 @@ async fn test_post_with_smaller_content_length() {
 async fn test_post_with_larger_content_length() {
   boot_regular().await;
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
-  let expected = b"HTTP/1.1 200 OK";
+  let expected = b"HTTP/1.1 400 Bad Request";
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   run_regular(request, expected).await;
 }
@@ -397,7 +397,7 @@ async fn test_put_with_smaller_content_length() {
 async fn test_put_with_larger_content_length() {
   boot_regular().await;
   let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
-  let expected = b"HTTP/1.1 200 OK";
+  let expected = b"HTTP/1.1 400 Bad Request";
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   run_regular(request, expected).await;
 }
@@ -505,7 +505,7 @@ async fn test_delete_with_content_length_smaller_than_body() {
 async fn test_delete_with_content_length_larger_than_body() {
   boot_regular().await;
   let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
-  let expected = b"delete";
+  let expected = b"HTTP/1.1 400 Bad Request";
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   run_regular(request, expected).await;
 }

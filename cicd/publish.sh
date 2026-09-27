@@ -3,6 +3,17 @@ set -eu
 
 CRATE_NAME="$(sed -n 's/^name = "\\([^"]*\\)"/\\1/p' Cargo.toml | head -n 1)"
 CRATE_VERSION="$(sed -n 's/^version = "\\([^"]*\\)"/\\1/p' Cargo.toml | head -n 1)"
+MODE="${1:-}"
+
+if [ "$MODE" = "--dry-run" ]; then
+  cargo publish --dry-run --features sync
+  exit $?
+fi
+
+if [ -n "$MODE" ]; then
+  echo "Usage: sh cicd/publish.sh [--dry-run]"
+  exit 2
+fi
 
 if [ -z "$CRATE_NAME" ] || [ -z "$CRATE_VERSION" ]; then
   echo "Could not read package name/version from Cargo.toml."
@@ -29,4 +40,4 @@ if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
   exit 1
 fi
 
-cargo publish
+cargo publish --features sync

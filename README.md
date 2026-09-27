@@ -94,6 +94,24 @@ Response {
 }
 ```
 
+## Request bodies and limits
+
+Request bodies are stored as bytes so text and binary payloads are preserved. Text handlers can use:
+
+```rust
+let text = request.body_text()?;
+```
+
+Limits have defaults and can be changed independently:
+
+```rust
+server.set_body_limit(8 * 1024 * 1024);
+server.set_header_limit(64 * 1024);
+server.set_read_timeout(std::time::Duration::from_secs(5));
+```
+
+Only the settings you call are changed; the remaining defaults stay active.
+
 ## Testing
 
 Test helpers live in `httpageboy::test_utils` and work the same for sync and async runtimes:
