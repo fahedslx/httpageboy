@@ -198,4 +198,5 @@ impl Server {
       }
     })
     .detach();
-  }}
+  }
+}

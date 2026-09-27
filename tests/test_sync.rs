@@ -16,7 +16,8 @@ const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:38084";
 
 fn common_server_definition(server_url: &str) -> Server {
   let mut server = Server::new(server_url, POOL_SIZE).expect("failed to bind test server");
-  server.set_read_timeout(std::time::Duration::from_millis(50));
+  server.set_idle_timeout(std::time::Duration::from_millis(50));
+  server.set_req_timeout(std::time::Duration::from_millis(100));
   server.routes([
     route!("/", Rt::GET, demo_handle_home),
     route!("/test", Rt::GET, demo_handle_get),

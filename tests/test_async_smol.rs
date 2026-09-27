@@ -19,7 +19,8 @@ async fn common_server_definition(server_url: &str) -> Server {
       .await
       .expect("failed to bind test server"),
   };
-  server.set_read_timeout(std::time::Duration::from_millis(50));
+  server.set_idle_timeout(std::time::Duration::from_millis(50));
+  server.set_req_timeout(std::time::Duration::from_millis(100));
   server.routes([
     route!("/", Rt::GET, demo_handle_home),
     route!("/test", Rt::GET, demo_handle_get),
