@@ -34,7 +34,10 @@ async fn main() {
 
   // srv.set_body_limit(8 * 1024 * 1024);
   // srv.set_header_limit(64 * 1024);
-  // srv.set_read_timeout(std::time::Duration::from_secs(5));
+  // srv.set_idle_timeout(std::time::Duration::from_millis(500));
+  // srv.set_req_timeout(std::time::Duration::from_secs(30));
+  // srv.set_keep_alive(std::time::Duration::from_secs(3));
+  // srv.set_max_requests(20);
 
   srv.routes([route!("/", Rt::GET, demo)]);
   srv.run().await;

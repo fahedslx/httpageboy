@@ -3,9 +3,7 @@ use crate::core::request_type::RequestType;
 use crate::core::response::Response;
 use std::path::PathBuf;
 
-pub fn print_server_info(addr: std::net::SocketAddr, _auto_close: bool) {
-  // println!("Connection autoclose set to {:?}", _auto_close);
-
+pub fn print_server_info(addr: std::net::SocketAddr) {
   let url = format!("http://{}", addr);
   let _green_url = format!("\x1b[32m{}\x1b[0m", url);
 

@@ -1,5 +1,5 @@
 use crate::core::cors::CorsPolicy;
-use crate::core::request::handle_request_async;
+use crate::core::request::{StreamRead, handle_request_async};
 use crate::runtime::r#async::shared;
 use crate::runtime::shared::{print_server_info, response_or_default};
 use async_std::io::prelude::*;
@@ -52,7 +52,6 @@ impl Server {
       url,
       routes: Arc::new(Default::default()),
       files_sources: Arc::new(Vec::new()),
-      auto_close: true,
       cors: Some(Arc::new(CorsPolicy::default())),
       limits: Default::default(),
     }))
@@ -77,14 +76,14 @@ impl Server {
 
   /// Starts the server and begins accepting connections.
   pub async fn run(&self) {
-    print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
+    print_server_info(self.listener.local_addr().unwrap());
     while let Ok((stream, _)) = self.listener.accept().await {
       self.handle_stream(stream);
     }
   }
 
   pub async fn run_until_shutdown(&self, shutdown_rx: mpsc::Receiver<()>) {
-    print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
+    print_server_info(self.listener.local_addr().unwrap());
     loop {
       if shutdown_rx.try_recv().is_ok() {
         break;
@@ -98,48 +97,94 @@ impl Server {
   fn handle_stream(&self, mut stream: TcpStream) {
     let routes = self.routes.clone();
     let files = self.files_sources.clone();
-    let close_flag = self.auto_close;
     let cors_policy = self.cors.clone();
     let limits = self.limits;
 
     spawn(async move {
-      let (mut req, early) = crate::core::request::parse_stream_async_std(&mut stream, &routes, &files, &limits).await;
-      let origin = req.origin().map(str::to_string);
-      let method = req.method.clone();
-      let upgrade = req.upgrade_handler(&routes);
-      let resp = match early {
-        Some(r) => r,
-        None => {
-          let routed = handle_request_async(&mut req, &routes, &files).await;
-          response_or_default(routed, &method, cors_policy.as_deref())
-        }
-      };
-      if resp.status == crate::StatusCode::SwitchingProtocols {
-        if let Some(upgrade) = upgrade {
-          if !shared::send_response(
-            &mut stream,
-            &resp,
-            false,
-            cors_policy.as_deref(),
-            origin.as_deref(),
-          )
-          .await
-          {
+      let mut buffer = Vec::new();
+      let mut handled = 0usize;
+
+      loop {
+        let (mut req, early) = match crate::core::request::parse_stream_async_std(
+          &mut stream,
+          &mut buffer,
+          &routes,
+          &files,
+          &limits,
+          handled > 0,
+        )
+        .await
+        {
+          StreamRead::Ready(request, early) => (request, early),
+          StreamRead::Idle | StreamRead::Closed => break,
+          StreamRead::Error(response) => {
+            let _ = shared::send_response(
+              &mut stream,
+              &response,
+              true,
+              cors_policy.as_deref(),
+              None,
+            )
+            .await;
+            break;
+          }
+        };
+
+        handled += 1;
+        let origin = req.origin().map(str::to_string);
+        let method = req.method.clone();
+        let upgrade = req.upgrade_handler(&routes);
+        let request_close = req.wants_close();
+
+        let resp = match early {
+          Some(r) => r,
+          None => {
+            let routed = handle_request_async(&mut req, &routes, &files).await;
+            response_or_default(routed, &method, cors_policy.as_deref())
+          }
+        };
+
+        if resp.status == crate::StatusCode::SwitchingProtocols {
+          if let Some(upgrade) = upgrade {
+            if !shared::send_response(
+              &mut stream,
+              &resp,
+              false,
+              cors_policy.as_deref(),
+              origin.as_deref(),
+            )
+            .await
+            {
+              return;
+            }
+            upgrade.handle(req, stream).await;
             return;
           }
-          upgrade.handle(req, stream).await;
-          return;
+        }
+
+        let response_close = resp
+          .headers
+          .iter()
+          .filter(|(key, _)| key.eq_ignore_ascii_case("connection"))
+          .flat_map(|(_, value)| value.split(','))
+          .any(|token| token.trim().eq_ignore_ascii_case("close"));
+        let close = request_close || response_close || handled >= limits.max_requests;
+
+        if !shared::send_response(
+          &mut stream,
+          &resp,
+          close,
+          cors_policy.as_deref(),
+          origin.as_deref(),
+        )
+        .await
+        {
+          break;
+        }
+
+        if close {
+          break;
         }
       }
-
-      let _ = shared::send_response(
-        &mut stream,
-        &resp,
-        close_flag,
-        cors_policy.as_deref(),
-        origin.as_deref(),
-      )
-      .await;
     });
-  }
-}
+  }}

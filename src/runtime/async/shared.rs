@@ -51,17 +51,11 @@ pub struct GenericServer<L> {
   pub url: String,
   pub routes: Arc<HashMap<(Rt, String), RouteEntry>>,
   pub files_sources: Arc<Vec<String>>,
-  pub auto_close: bool,
   pub cors: Option<Arc<CorsPolicy>>,
   pub limits: RequestLimits,
 }
 
 impl<L> GenericServer<L> {
-  /// Toggles the `Connection: close` header.
-  pub fn set_auto_close(&mut self, active: bool) {
-    self.auto_close = active;
-  }
-
   pub fn set_body_limit(&mut self, bytes: usize) {
     self.limits.body_bytes = bytes;
   }
@@ -70,8 +64,20 @@ impl<L> GenericServer<L> {
     self.limits.header_bytes = bytes;
   }
 
-  pub fn set_read_timeout(&mut self, timeout: Duration) {
-    self.limits.read_timeout = timeout;
+  pub fn set_idle_timeout(&mut self, timeout: Duration) {
+    self.limits.idle_timeout = timeout;
+  }
+
+  pub fn set_req_timeout(&mut self, timeout: Duration) {
+    self.limits.request_timeout = timeout;
+  }
+
+  pub fn set_keep_alive(&mut self, timeout: Duration) {
+    self.limits.keep_alive_timeout = timeout;
+  }
+
+  pub fn set_max_requests(&mut self, requests: usize) {
+    self.limits.max_requests = requests.max(1);
   }
 
   pub fn routes<I>(&mut self, routes: I)

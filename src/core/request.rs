@@ -534,6 +534,15 @@ impl Request {
       .map(|(_, v)| v.as_str())
   }
 
+  pub(crate) fn wants_close(&self) -> bool {
+    self
+      .headers
+      .iter()
+      .filter(|(key, _)| key.eq_ignore_ascii_case("connection"))
+      .flat_map(|(_, value)| value.split(','))
+      .any(|token| token.trim().eq_ignore_ascii_case("close"))
+  }
+
   pub(crate) fn upgrade_handler(
     &self,
     routes: &HashMap<(Rt, String), RouteEntry>,
