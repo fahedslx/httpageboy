@@ -307,7 +307,7 @@ macro_rules! create_async_parse_stream {
         raw.extend_from_slice(&body);
       }
 
-      crate::core::request::Request::parse_bytes_async(raw, routes, file_bases).await
+      crate::core::request::Request::parse_raw_async(raw, routes, file_bases).await
     }
   };
 }
@@ -463,10 +463,6 @@ impl Request {
       }
     }
     sorted.into_iter().collect()
-  }
-
-  pub fn body_text(&self) -> Result<&str, std::str::Utf8Error> {
-    std::str::from_utf8(&self.body)
   }
 
   pub fn origin(&self) -> Option<&str> {
@@ -631,25 +627,16 @@ impl Request {
     }
 
     let _ = stream.set_read_timeout(None);
-    Self::parse_bytes_sync(raw, routes, file_bases)
+    Self::parse_raw_sync(raw, routes, file_bases)
   }
 
   #[cfg(feature = "sync")]
-  pub fn parse_raw_sync(
-    raw: String,
-    routes: &HashMap<(Rt, String), RouteEntry>,
-    file_bases: &[String],
-  ) -> (Self, Option<Response>) {
-    Self::parse_bytes_sync(raw.into_bytes(), routes, file_bases)
-  }
-
-  #[cfg(feature = "sync")]
-  fn parse_bytes_sync(
+  fn parse_raw_sync(
     raw: Vec<u8>,
     routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
   ) -> (Self, Option<Response>) {
-    match Self::parse_bytes_only(raw, routes) {
+    match Self::parse_raw_only(raw, routes) {
       Ok(mut request) => {
         let early = request.route_sync(routes, file_bases);
         (request, early)
@@ -659,21 +646,12 @@ impl Request {
   }
 
   #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
-  pub async fn parse_raw_async(
-    raw: String,
-    routes: &HashMap<(Rt, String), RouteEntry>,
-    file_bases: &[String],
-  ) -> (Self, Option<Response>) {
-    Self::parse_bytes_async(raw.into_bytes(), routes, file_bases).await
-  }
-
-  #[cfg(any(feature = "async_tokio", feature = "async_std", feature = "async_smol"))]
-  async fn parse_bytes_async(
+  async fn parse_raw_async(
     raw: Vec<u8>,
     routes: &HashMap<(Rt, String), RouteEntry>,
     file_bases: &[String],
   ) -> (Self, Option<Response>) {
-    match Self::parse_bytes_only(raw, routes) {
+    match Self::parse_raw_only(raw, routes) {
       Ok(mut request) => {
         let early = request.route_async(routes, file_bases).await;
         (request, early)
@@ -682,7 +660,7 @@ impl Request {
     }
   }
 
-  fn parse_bytes_only(
+  fn parse_raw_only(
     raw: Vec<u8>,
     routes: &HashMap<(Rt, String), RouteEntry>,
   ) -> Result<Self, Response> {
@@ -953,10 +931,10 @@ mod request_tests {
     let mut raw = b"POST /binary HTTP/1.1\r\nContent-Length: 4\r\n\r\n".to_vec();
     raw.extend_from_slice(&[0x00, 0xff, 0x01, 0x02]);
 
-    let request = Request::parse_bytes_only(raw, &HashMap::new()).expect("valid request");
+    let request = Request::parse_raw_only(raw, &HashMap::new()).expect("valid request");
 
     assert_eq!(request.body, vec![0x00, 0xff, 0x01, 0x02]);
-    assert!(request.body_text().is_err());
+    assert!(std::str::from_utf8(&request.body).is_err());
   }
 
   #[test]

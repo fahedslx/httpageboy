@@ -101,7 +101,7 @@ Response {
 
 ## Request body
 
-`Request.body` stores bytes; use `request.body_text()` when text is expected.
+`Request.body` stores bytes; use `std::str::from_utf8(&request.body)` when text is expected.
 
 ## Testing
 

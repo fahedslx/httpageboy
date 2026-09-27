@@ -96,7 +96,7 @@ async fn demo_handle_post(_request: &Request) -> Response {
   }
   let body = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, ordered, _request.body_text().unwrap_or("")
+    _request.method, _request.path, ordered, std::str::from_utf8(&_request.body).unwrap_or("")
   );
   Response {
     status: StatusCode::Ok.to_string(),
@@ -116,7 +116,7 @@ async fn demo_handle_get(_request: &Request) -> Response {
 async fn demo_handle_put(_request: &Request) -> Response {
   let body = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, _request.params, _request.body_text().unwrap_or("")
+    _request.method, _request.path, _request.params, std::str::from_utf8(&_request.body).unwrap_or("")
   );
   Response {
     status: StatusCode::Ok.to_string(),
@@ -169,7 +169,7 @@ async fn demo_handle_query(request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
     headers: vec![],
-    body: format!("query:{}", request.body_text().unwrap_or("")).into_bytes(),
+    body: format!("query:{}", std::str::from_utf8(&request.body).unwrap_or("")).into_bytes(),
   }
 }
 

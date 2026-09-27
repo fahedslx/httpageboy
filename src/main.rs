@@ -60,7 +60,7 @@ fn query_response(request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: format!("QUERY: {}", request.body_text().unwrap_or("")).into_bytes(),
+    body: format!("QUERY: {}", std::str::from_utf8(&request.body).unwrap_or("")).into_bytes(),
   }
 }
 
