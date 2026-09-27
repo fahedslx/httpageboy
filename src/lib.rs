@@ -1,3 +1,23 @@
+#[cfg(not(any(
+  feature = "sync",
+  feature = "async_tokio",
+  feature = "async_std",
+  feature = "async_smol"
+)))]
+compile_error!(
+  "Select one runtime feature, e.g. --features sync or --features async_tokio."
+);
+
+#[cfg(any(
+  all(feature = "sync", feature = "async_tokio"),
+  all(feature = "sync", feature = "async_std"),
+  all(feature = "sync", feature = "async_smol"),
+  all(feature = "async_tokio", feature = "async_std"),
+  all(feature = "async_tokio", feature = "async_smol"),
+  all(feature = "async_std", feature = "async_smol")
+))]
+compile_error!("Select exactly one runtime feature.");
+
 pub mod core;
 
 // Common re-exports (always available)
@@ -50,27 +70,3 @@ pub use runtime::r#async::smol::Server;
   feature = "async_std"
 ))]
 pub use runtime::r#async::async_std::Server;
-
-// Fallback dummy server if no feature is active
-#[cfg(all(
-  not(feature = "sync"),
-  not(feature = "async_tokio"),
-  not(feature = "async_smol"),
-  not(feature = "async_std")
-))]
-pub struct Server;
-
-#[cfg(all(
-  not(feature = "sync"),
-  not(feature = "async_tokio"),
-  not(feature = "async_smol"),
-  not(feature = "async_std")
-))]
-impl Server {
-  pub fn new() -> Self {
-    eprintln!(
-      "\n❌ No feature is active.\n\nActivate a feature when compiling:\n\n    cargo run --features sync\n    cargo run --features async_tokio\n    cargo run --features async_std\n    cargo run --features async_smol\n"
-    );
-    panic!("No feature selected.");
-  }
-}

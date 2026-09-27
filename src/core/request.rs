@@ -943,3 +943,28 @@ pub async fn handle_request_async(
 ) -> Option<Response> {
   req.route_async(routes, file_bases).await
 }
+
+#[cfg(test)]
+mod request_tests {
+  use super::*;
+
+  #[test]
+  fn preserves_binary_request_body() {
+    let mut raw = b"POST /binary HTTP/1.1\r\nContent-Length: 4\r\n\r\n".to_vec();
+    raw.extend_from_slice(&[0x00, 0xff, 0x01, 0x02]);
+
+    let request = Request::parse_bytes_only(raw, &HashMap::new()).expect("valid request");
+
+    assert_eq!(request.body, vec![0x00, 0xff, 0x01, 0x02]);
+    assert!(request.body_text().is_err());
+  }
+
+  #[test]
+  fn rejects_ambiguous_body_framing() {
+    let duplicate = "POST / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\n";
+    assert_eq!(extract_body_headers(duplicate), Err(StatusCode::BadRequest));
+
+    let mixed = "POST / HTTP/1.1\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n";
+    assert_eq!(extract_body_headers(mixed), Err(StatusCode::BadRequest));
+  }
+}

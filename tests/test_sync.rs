@@ -16,6 +16,7 @@ const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:38084";
 
 fn common_server_definition(server_url: &str) -> Server {
   let mut server = Server::new(server_url, POOL_SIZE).expect("failed to bind test server");
+  server.set_read_timeout(std::time::Duration::from_millis(50));
   server.routes([
     route!("/", Rt::GET, demo_handle_home),
     route!("/test", Rt::GET, demo_handle_get),
@@ -90,7 +91,7 @@ fn demo_handle_post(_request: &Request) -> Response {
 
   let request_string = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, ordered, _request.body
+    _request.method, _request.path, ordered, _request.body_text().unwrap_or("")
   );
 
   Response {
@@ -111,7 +112,7 @@ fn demo_handle_get(_request: &Request) -> Response {
 fn demo_handle_put(_request: &Request) -> Response {
   let request_string = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, _request.params, _request.body
+    _request.method, _request.path, _request.params, _request.body_text().unwrap_or("")
   );
   Response {
     status: StatusCode::Ok.to_string(),
@@ -164,7 +165,7 @@ fn demo_handle_query(request: &Request) -> Response {
   Response {
     status: StatusCode::Ok.to_string(),
     headers: vec![],
-    body: format!("query:{}", request.body).into_bytes(),
+    body: format!("query:{}", request.body_text().unwrap_or("")).into_bytes(),
   }
 }
 
