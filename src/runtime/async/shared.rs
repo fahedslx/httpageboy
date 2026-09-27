@@ -1,4 +1,5 @@
 use crate::core::cors::CorsPolicy;
+use crate::core::request::RequestLimits;
 use crate::core::request_type::Rt;
 use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
@@ -7,6 +8,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::io::Result;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A trait that abstracts over the different async TCP streams.
 /// This allows us to write generic code that can work with any of the supported runtimes.
@@ -43,12 +45,25 @@ pub struct GenericServer<L> {
   pub files_sources: Arc<Vec<String>>,
   pub auto_close: bool,
   pub cors: Option<Arc<CorsPolicy>>,
+  pub limits: RequestLimits,
 }
 
 impl<L> GenericServer<L> {
   /// Toggles the `Connection: close` header.
   pub fn set_auto_close(&mut self, active: bool) {
     self.auto_close = active;
+  }
+
+  pub fn set_body_limit(&mut self, bytes: usize) {
+    self.limits.body_bytes = bytes;
+  }
+
+  pub fn set_header_limit(&mut self, bytes: usize) {
+    self.limits.header_bytes = bytes;
+  }
+
+  pub fn set_read_timeout(&mut self, timeout: Duration) {
+    self.limits.read_timeout = timeout;
   }
 
   pub fn routes<I>(&mut self, routes: I)

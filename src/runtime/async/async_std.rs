@@ -54,6 +54,7 @@ impl Server {
       files_sources: Arc::new(Vec::new()),
       auto_close: true,
       cors: Some(Arc::new(CorsPolicy::default())),
+      limits: Default::default(),
     }))
   }
 
@@ -99,9 +100,10 @@ impl Server {
     let files = self.files_sources.clone();
     let close_flag = self.auto_close;
     let cors_policy = self.cors.clone();
+    let limits = self.limits;
 
     spawn(async move {
-      let (mut req, early) = crate::core::request::parse_stream_async_std(&mut stream, &routes, &files).await;
+      let (mut req, early) = crate::core::request::parse_stream_async_std(&mut stream, &routes, &files, &limits).await;
       let origin = req.origin().map(str::to_string);
       let method = req.method.clone();
       let upgrade = req.upgrade_handler(&routes);

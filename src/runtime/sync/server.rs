@@ -1,7 +1,7 @@
 #![cfg(feature = "sync")]
 
 use crate::core::cors::CorsPolicy;
-use crate::core::request::{Request, handle_request_sync};
+use crate::core::request::{Request, RequestLimits, handle_request_sync};
 use crate::core::request_type::Rt;
 use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
@@ -23,6 +23,7 @@ pub struct Server {
   files_sources: Vec<String>,
   auto_close: bool,
   cors: Option<Arc<CorsPolicy>>,
+  limits: RequestLimits,
 }
 
 impl Server {
@@ -39,11 +40,24 @@ impl Server {
       files_sources: Vec::new(),
       auto_close: true,
       cors: Some(Arc::new(CorsPolicy::default())),
+      limits: RequestLimits::default(),
     })
   }
 
   pub fn set_auto_close(&mut self, state: bool) {
     self.auto_close = state;
+  }
+
+  pub fn set_body_limit(&mut self, bytes: usize) {
+    self.limits.body_bytes = bytes;
+  }
+
+  pub fn set_header_limit(&mut self, bytes: usize) {
+    self.limits.header_bytes = bytes;
+  }
+
+  pub fn set_read_timeout(&mut self, timeout: Duration) {
+    self.limits.read_timeout = timeout;
   }
 
   pub fn set_cors(&mut self, policy: CorsPolicy) {
@@ -121,10 +135,11 @@ impl Server {
     let sources_local = self.files_sources.clone();
     let close_flag = self.auto_close;
     let cors_policy = self.cors.clone();
+    let limits = self.limits;
     let pool = Arc::clone(&self.pool);
     pool.lock().unwrap().run(move || {
       let mut stream = stream;
-      let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local);
+      let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local, &limits);
       let origin = request.origin().map(str::to_string);
       let method = request.method.clone();
       let upgrade = request.upgrade_handler(&routes_local);
