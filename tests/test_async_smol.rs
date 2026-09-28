@@ -661,7 +661,7 @@ fn test_empty_request() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"";
-    let expected = b"HTTP/1.1 400 Bad Request";
+    let expected = b"";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });

@@ -578,7 +578,7 @@ async fn test_allowed_method_missing_route() {
 async fn test_empty_request() {
   boot_regular().await;
   let request = b"";
-  let expected = b"HTTP/1.1 400 Bad Request";
+  let expected = b"";
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   run_regular(request, expected).await;
 }

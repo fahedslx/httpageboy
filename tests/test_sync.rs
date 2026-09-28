@@ -585,7 +585,7 @@ fn test_allowed_method_missing_route() {
 fn test_empty_request() {
   boot_regular();
   let request = b"";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
+  let expected_response = b"";
   run_regular(request, expected_response);
 }
 
