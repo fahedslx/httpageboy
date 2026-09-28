@@ -38,13 +38,24 @@ fn valid_header_part(value: &str) -> bool {
   !value.contains('\r') && !value.contains('\n')
 }
 
+fn status_forbids_content(status: crate::StatusCode) -> bool {
+  let code = status as u16;
+  (100..200).contains(&code)
+    || status == crate::StatusCode::NoContent
+    || status == crate::StatusCode::NotModified
+}
+
+pub fn response_has_content(method: Option<&RequestType>, response: &Response) -> bool {
+  !matches!(method, Some(RequestType::HEAD)) && !status_forbids_content(response.status)
+}
+
 pub fn response_head(
   response: &Response,
+  method: Option<&RequestType>,
   close: bool,
   cors: Option<&CorsPolicy>,
   origin: Option<&str>,
 ) -> Option<String> {
-  let switching_protocols = response.status == crate::StatusCode::SwitchingProtocols;
   let mut header = format!("HTTP/1.1 {}\r\n", response.status);
 
   for (key, value) in &response.headers {
@@ -60,7 +71,7 @@ pub fn response_head(
     header.push_str(&format!("{}: {}\r\n", key, value));
   }
 
-  if !switching_protocols {
+  if response_has_content(method, response) {
     header.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
   }
   if close {
@@ -106,7 +117,7 @@ mod tests {
       body: Vec::new().into(),
     };
 
-    let head = response_head(&response, false, None, None).expect("valid response headers");
+    let head = response_head(&response, None, false, None, None).expect("valid response headers");
 
     assert!(head.contains("HTTP/1.1 101 Switching Protocols"));
     assert!(head.contains("Upgrade: websocket"));
@@ -121,6 +132,31 @@ mod tests {
       body: Vec::new().into(),
     };
 
-    assert!(response_head(&response, true, None, None).is_none());
+    assert!(response_head(&response, None, true, None, None).is_none());
+  }
+
+  #[test]
+  fn suppresses_content_for_head_and_bodyless_statuses() {
+    let response = Response {
+      status: StatusCode::Ok,
+      headers: vec![],
+      body: "body".into(),
+    };
+    assert!(!response_has_content(Some(&RequestType::HEAD), &response));
+    let head = response_head(&response, Some(&RequestType::HEAD), false, None, None)
+      .expect("valid response headers");
+    assert!(!head.contains("Content-Length"));
+
+    for status in [StatusCode::Continue, StatusCode::NoContent, StatusCode::NotModified] {
+      let response = Response {
+        status,
+        headers: vec![],
+        body: "body".into(),
+      };
+      assert!(!response_has_content(None, &response));
+      let head = response_head(&response, None, false, None, None)
+        .expect("valid response headers");
+      assert!(!head.contains("Content-Length"));
+    }
   }
 }

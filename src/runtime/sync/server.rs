@@ -165,6 +165,7 @@ impl Server {
             let _ = Self::send_response(
               &mut stream,
               &response,
+              None,
               true,
               cors_policy.as_deref(),
               None,
@@ -191,6 +192,7 @@ impl Server {
             if !Self::send_response(
               &mut stream,
               &response,
+              Some(&method),
               false,
               cors_policy.as_deref(),
               origin.as_deref(),
@@ -213,6 +215,7 @@ impl Server {
         if !Self::send_response(
           &mut stream,
           &response,
+          Some(&method),
           close,
           cors_policy.as_deref(),
           origin.as_deref(),
@@ -230,11 +233,12 @@ impl Server {
   fn send_response(
     stream: &mut TcpStream,
     response: &Response,
+    method: Option<&Rt>,
     close: bool,
     cors: Option<&CorsPolicy>,
     origin: Option<&str>,
   ) -> bool {
-    let Some(header) = response_head(response, close, cors, origin) else {
+    let Some(header) = response_head(response, method, close, cors, origin) else {
       let _ = stream.write_all(INTERNAL_SERVER_ERROR_HEAD.as_bytes());
       let _ = stream.flush();
       let _ = stream.shutdown(Shutdown::Both);
@@ -242,7 +246,9 @@ impl Server {
     };
 
     let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(response.body.as_ref());
+    if crate::runtime::shared::response_has_content(method, response) {
+      let _ = stream.write_all(response.body.as_ref());
+    }
     let _ = stream.flush();
     if close {
       let _ = stream.shutdown(Shutdown::Both);

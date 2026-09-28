@@ -122,6 +122,7 @@ impl Server {
             let _ = shared::send_response(
               &mut stream,
               &response,
+              None,
               true,
               cors_policy.as_deref(),
               None,
@@ -150,6 +151,7 @@ impl Server {
             if !shared::send_response(
               &mut stream,
               &resp,
+              Some(&method),
               false,
               cors_policy.as_deref(),
               origin.as_deref(),
@@ -174,6 +176,7 @@ impl Server {
         if !shared::send_response(
           &mut stream,
           &resp,
+          Some(&method),
           close,
           cors_policy.as_deref(),
           origin.as_deref(),

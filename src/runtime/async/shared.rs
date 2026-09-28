@@ -24,11 +24,12 @@ pub trait AsyncStream: Send + Sync {
 pub async fn send_response<S: AsyncStream>(
   stream: &mut S,
   resp: &Response,
+  method: Option<&Rt>,
   close: bool,
   cors: Option<&CorsPolicy>,
   origin: Option<&str>,
 ) -> bool {
-  let Some(head) = runtime_shared::response_head(resp, close, cors, origin) else {
+  let Some(head) = runtime_shared::response_head(resp, method, close, cors, origin) else {
     let _ = stream.write_all(INTERNAL_SERVER_ERROR_HEAD.as_bytes()).await;
     let _ = stream.flush().await;
     let _ = stream.shutdown().await;
@@ -36,7 +37,9 @@ pub async fn send_response<S: AsyncStream>(
   };
 
   let _ = stream.write_all(head.as_bytes()).await;
-  let _ = stream.write_all(resp.body.as_ref()).await;
+  if runtime_shared::response_has_content(method, resp) {
+    let _ = stream.write_all(resp.body.as_ref()).await;
+  }
   let _ = stream.flush().await;
   if close {
     let _ = stream.shutdown().await;

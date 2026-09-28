@@ -416,9 +416,9 @@ async fn test_patch() {
 async fn test_head() {
   boot_regular().await;
   let request = b"HEAD /test HTTP/1.1\r\n\r\n";
-  let expected = b"head";
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-  run_regular(request, expected).await;
+  let response = run_regular(request, b"HTTP/1.1 200 OK").await;
+  assert!(!response.ends_with("\r\n\r\nhead"), "{response}");
 }
 
 #[tokio::test]
