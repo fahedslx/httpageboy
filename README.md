@@ -22,15 +22,23 @@ use httpageboy::{route, Request, Rt, Response, Server, StatusCode};
 async fn demo(_req: &Request) -> Response {
   tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: b"ok".to_vec(),
+    body: "ok".into(),
   }
 }
 
 #[tokio::main]
 async fn main() {
   let mut srv = Server::new("127.0.0.1:7878").await.unwrap();
+
+  // srv.set_body_limit(8 * 1024 * 1024);
+  // srv.set_header_limit(64 * 1024);
+  // srv.set_idle_timeout(std::time::Duration::from_millis(500));
+  // srv.set_req_timeout(std::time::Duration::from_secs(30));
+  // srv.set_keep_alive(std::time::Duration::from_secs(3));
+  // srv.set_max_requests(20);
+
   srv.routes([route!("/", Rt::GET, demo)]);
   srv.run().await;
 }
@@ -79,20 +87,24 @@ Response now supports arbitrary headers:
 
 ```rust
 Response {
-  status: StatusCode::Ok.to_string(),
+  status: StatusCode::Ok,
   headers: vec![("Content-Type".into(), "application/json".into())],
-  body: br#"{"ok":true}"#.to_vec(),
+  body: br#"{"ok":true}"#.into(),
 }
 
 Response {
-  status: StatusCode::TemporaryRedirect.to_string(),
+  status: StatusCode::TemporaryRedirect,
   headers: vec![
     ("Location".into(), "https://example.com".into()),
     ("Content-Type".into(), "text/plain".into()),
   ],
-  body: Vec::new(),
+  body: Vec::new().into(),
 }
 ```
+
+## Request body
+
+`Request.body` stores bytes; use `request.body_text()` when text is expected.
 
 ## Testing
 
@@ -118,9 +130,9 @@ fn server_factory() -> Server {
 
 fn home(_req: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: b"home".to_vec(),
+    body: "home".into(),
   }
 }
 
@@ -164,9 +176,9 @@ async fn server_factory() -> Server {
 
 async fn home(_req: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: b"home".to_vec(),
+    body: "home".into(),
   }
 }
 

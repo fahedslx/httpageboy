@@ -1,11 +1,13 @@
 #![cfg(feature = "sync")]
 
 use crate::core::cors::CorsPolicy;
-use crate::core::request::{Request, handle_request_sync};
+use crate::core::request::{Request, RequestLimits, StreamRead, handle_request_sync};
 use crate::core::request_type::Rt;
 use crate::core::route::{Route, RouteEntry};
 use crate::core::response::Response;
-use crate::runtime::shared::{file_source_path, print_server_info, response_head, response_or_default};
+use crate::runtime::shared::{
+  INTERNAL_SERVER_ERROR_HEAD, file_source_path, print_server_info, response_head, response_or_default,
+};
 use crate::runtime::sync::threadpool::ThreadPool;
 use std::collections::HashMap;
 use std::io::prelude::Write;
@@ -21,8 +23,8 @@ pub struct Server {
   pool: Arc<Mutex<ThreadPool>>,
   routes: HashMap<(Rt, String), RouteEntry>,
   files_sources: Vec<String>,
-  auto_close: bool,
   cors: Option<Arc<CorsPolicy>>,
+  limits: RequestLimits,
 }
 
 impl Server {
@@ -37,13 +39,33 @@ impl Server {
       pool,
       routes: HashMap::new(),
       files_sources: Vec::new(),
-      auto_close: true,
       cors: Some(Arc::new(CorsPolicy::default())),
+      limits: RequestLimits::default(),
     })
   }
 
-  pub fn set_auto_close(&mut self, state: bool) {
-    self.auto_close = state;
+  pub fn set_body_limit(&mut self, bytes: usize) {
+    self.limits.body_bytes = bytes;
+  }
+
+  pub fn set_header_limit(&mut self, bytes: usize) {
+    self.limits.header_bytes = bytes;
+  }
+
+  pub fn set_idle_timeout(&mut self, timeout: Duration) {
+    self.limits.idle_timeout = timeout;
+  }
+
+  pub fn set_req_timeout(&mut self, timeout: Duration) {
+    self.limits.request_timeout = timeout;
+  }
+
+  pub fn set_keep_alive(&mut self, timeout: Duration) {
+    self.limits.keep_alive_timeout = timeout;
+  }
+
+  pub fn set_max_requests(&mut self, requests: usize) {
+    self.limits.max_requests = requests.max(1);
   }
 
   pub fn set_cors(&mut self, policy: CorsPolicy) {
@@ -80,7 +102,7 @@ impl Server {
   }
 
   pub fn run(&self) {
-    print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
+    print_server_info(self.listener.local_addr().unwrap());
     for stream in self.listener.incoming() {
       match stream {
         Ok(stream) => {
@@ -94,7 +116,7 @@ impl Server {
   }
 
   pub fn run_until_shutdown(&self, shutdown_rx: mpsc::Receiver<()>) {
-    print_server_info(self.listener.local_addr().unwrap(), self.auto_close);
+    print_server_info(self.listener.local_addr().unwrap());
     let _ = self.listener.set_nonblocking(true);
     loop {
       if shutdown_rx.try_recv().is_ok() {
@@ -119,54 +141,118 @@ impl Server {
   fn handle_stream(&self, stream: TcpStream) {
     let routes_local = self.routes.clone();
     let sources_local = self.files_sources.clone();
-    let close_flag = self.auto_close;
     let cors_policy = self.cors.clone();
+    let limits = self.limits;
     let pool = Arc::clone(&self.pool);
+
     pool.lock().unwrap().run(move || {
       let mut stream = stream;
-      let (mut request, early_resp) = Request::parse_stream_sync(&stream, &routes_local, &sources_local);
-      let origin = request.origin().map(str::to_string);
-      let method = request.method.clone();
-      let upgrade = request.upgrade_handler(&routes_local);
-      let response = if let Some(resp) = early_resp {
-        resp
-      } else {
-        let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
-        response_or_default(routed, &method, cors_policy.as_deref())
-      };
+      let mut buffer = Vec::new();
+      let mut handled = 0usize;
 
-      if response.status.starts_with("101 ") {
-        if let Some(upgrade) = upgrade {
-          Self::send_response(&mut stream, &response, false, cors_policy.as_deref(), origin.as_deref());
-          futures::executor::block_on(upgrade.handle(request, stream));
-          return;
+      loop {
+        let (mut request, early_resp) = match Request::parse_stream_sync(
+          &mut stream,
+          &mut buffer,
+          &routes_local,
+          &sources_local,
+          &limits,
+          handled > 0,
+        ) {
+          StreamRead::Ready(request, early) => (request, early),
+          StreamRead::Idle | StreamRead::Closed => break,
+          StreamRead::Error(response) => {
+            let _ = Self::send_response(
+              &mut stream,
+              &response,
+              None,
+              true,
+              cors_policy.as_deref(),
+              None,
+            );
+            break;
+          }
+        };
+
+        handled += 1;
+        let origin = request.origin().map(str::to_string);
+        let method = request.method.clone();
+        let upgrade = request.upgrade_handler(&routes_local);
+        let request_close = request.wants_close();
+
+        let response = if let Some(resp) = early_resp {
+          resp
+        } else {
+          let routed = handle_request_sync(&mut request, &routes_local, &sources_local);
+          response_or_default(routed, &method, cors_policy.as_deref())
+        };
+
+        if response.status == crate::StatusCode::SwitchingProtocols {
+          if let Some(upgrade) = upgrade {
+            if !Self::send_response(
+              &mut stream,
+              &response,
+              Some(&method),
+              false,
+              cors_policy.as_deref(),
+              origin.as_deref(),
+            ) {
+              return;
+            }
+            futures::executor::block_on(upgrade.handle(request, stream));
+            return;
+          }
+        }
+
+        let response_close = response
+          .headers
+          .iter()
+          .filter(|(key, _)| key.eq_ignore_ascii_case("connection"))
+          .flat_map(|(_, value)| value.split(','))
+          .any(|token| token.trim().eq_ignore_ascii_case("close"));
+        let close = request_close || response_close || handled >= limits.max_requests;
+
+        if !Self::send_response(
+          &mut stream,
+          &response,
+          Some(&method),
+          close,
+          cors_policy.as_deref(),
+          origin.as_deref(),
+        ) {
+          break;
+        }
+
+        if close {
+          break;
         }
       }
-
-      Self::send_response(
-        &mut stream,
-        &response,
-        close_flag,
-        cors_policy.as_deref(),
-        origin.as_deref(),
-      );
     });
   }
 
   fn send_response(
     stream: &mut TcpStream,
     response: &Response,
+    method: Option<&Rt>,
     close: bool,
     cors: Option<&CorsPolicy>,
     origin: Option<&str>,
-  ) {
-    let header = response_head(response, close, cors, origin);
-    let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(&response.body);
+  ) -> bool {
+    let Some(header) = response_head(response, method, close, cors, origin) else {
+      let _ = stream.write_all(INTERNAL_SERVER_ERROR_HEAD.as_bytes());
+      let _ = stream.flush();
+      let _ = stream.shutdown(Shutdown::Both);
+      return false;
+    };
 
+    let _ = stream.write_all(header.as_bytes());
+    if crate::runtime::shared::response_has_content(method, response) {
+      let _ = stream.write_all(response.body.as_ref());
+    }
     let _ = stream.flush();
     if close {
       let _ = stream.shutdown(Shutdown::Both);
     }
+    true
   }
 }

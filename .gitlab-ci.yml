@@ -1,19 +1,28 @@
-image: rust:latest
+default:
+  tags:
+    - eqeqo-vps1
 
 stages:
   - test
+  - release-check
   - release
 
 test:
   stage: test
   script:
     - sh cicd/test.sh
+
+release-check:
+  stage: release-check
+  script:
+    - sh cicd/publish.sh --dry-run
   rules:
     - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
 
 release:
   stage: release
   script:
-    - sh cicd/release.sh
+    - sh cicd/publish.sh
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
