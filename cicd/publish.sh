@@ -1,9 +1,14 @@
 #!/bin/sh
 set -eu
 
-CRATE_NAME="$(sed -n 's/^name = "\\([^"]*\\)"/\\1/p' Cargo.toml | head -n 1)"
-CRATE_VERSION="$(sed -n 's/^version = "\\([^"]*\\)"/\\1/p' Cargo.toml | head -n 1)"
+CRATE_NAME="$(awk -F '"' '/^name[[:space:]]*=/ { print $2; exit }' Cargo.toml)"
+CRATE_VERSION="$(awk -F '"' '/^version[[:space:]]*=/ { print $2; exit }' Cargo.toml)"
 MODE="${1:-}"
+
+if [ -z "$CRATE_NAME" ] || [ -z "$CRATE_VERSION" ]; then
+  echo "Could not read package name/version from Cargo.toml."
+  exit 1
+fi
 
 if [ "$MODE" = "--dry-run" ]; then
   cargo publish --dry-run --features sync
@@ -13,11 +18,6 @@ fi
 if [ -n "$MODE" ]; then
   echo "Usage: sh cicd/publish.sh [--dry-run]"
   exit 2
-fi
-
-if [ -z "$CRATE_NAME" ] || [ -z "$CRATE_VERSION" ]; then
-  echo "Could not read package name/version from Cargo.toml."
-  exit 1
 fi
 
 STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -A 'pageboy-ci' "https://crates.io/api/v1/crates/$CRATE_NAME/$CRATE_VERSION")"
