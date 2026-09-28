@@ -35,8 +35,12 @@ case "$STATUS" in
     ;;
 esac
 
+if [ -z "${CARGO_REGISTRY_TOKEN:-}" ] && [ -n "${crates_token:-}" ]; then
+  export CARGO_REGISTRY_TOKEN="$crates_token"
+fi
+
 if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
-  echo "CARGO_REGISTRY_TOKEN is required to publish."
+  echo "CARGO_REGISTRY_TOKEN or crates_token is required to publish."
   exit 1
 fi
 
