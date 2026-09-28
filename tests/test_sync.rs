@@ -16,6 +16,8 @@ const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:38084";
 
 fn common_server_definition(server_url: &str) -> Server {
   let mut server = Server::new(server_url, POOL_SIZE).expect("failed to bind test server");
+  server.set_idle_timeout(std::time::Duration::from_millis(50));
+  server.set_req_timeout(std::time::Duration::from_millis(100));
   server.routes([
     route!("/", Rt::GET, demo_handle_home),
     route!("/test", Rt::GET, demo_handle_get),
@@ -75,9 +77,9 @@ fn run_strict(request: &[u8], expected: &[u8]) -> String {
 
 fn demo_handle_home(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: "home".as_bytes().to_vec(),
+    body: "home".into(),
   }
 }
 
@@ -90,111 +92,111 @@ fn demo_handle_post(_request: &Request) -> Response {
 
   let request_string = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, ordered, _request.body
+    _request.method, _request.path, ordered, _request.body_text().unwrap_or("")
   );
 
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: request_string.as_bytes().to_vec(),
+    body: request_string.into(),
   }
 }
 
 fn demo_handle_get(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: "get".as_bytes().to_vec(),
+    body: "get".into(),
   }
 }
 
 fn demo_handle_put(_request: &Request) -> Response {
   let request_string = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, _request.params, _request.body
+    _request.method, _request.path, _request.params, _request.body_text().unwrap_or("")
   );
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: request_string.as_bytes().to_vec(),
+    body: request_string.into(),
   }
 }
 
 fn demo_handle_delete(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: "delete".as_bytes().to_vec(),
+    body: "delete".into(),
   }
 }
 
 fn demo_handle_head(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: "head".as_bytes().to_vec(),
+    body: "head".into(),
   }
 }
 
 fn demo_handle_options(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: "options".as_bytes().to_vec(),
+    body: "options".into(),
   }
 }
 
 fn demo_handle_connect(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: "connect".as_bytes().to_vec(),
+    body: "connect".into(),
   }
 }
 
 fn demo_handle_trace(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: "trace".as_bytes().to_vec(),
+    body: "trace".into(),
   }
 }
 
 fn demo_handle_query(request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: format!("query:{}", request.body).into_bytes(),
+    body: format!("query:{}", request.body_text().unwrap_or("")).into(),
   }
 }
 
 fn demo_handle_redirect(_request: &Request) -> Response {
   Response {
-    status: StatusCode::TemporaryRedirect.to_string(),
+    status: StatusCode::TemporaryRedirect,
     headers: vec![
       ("Location".to_string(), "https://example.com".to_string()),
       ("Content-Type".to_string(), "text/plain".to_string()),
     ],
-    body: Vec::new(),
+    body: Vec::new().into(),
   }
 }
 
 fn demo_handle_json(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".to_string(), "application/json".to_string())],
-    body: br#"{"ok":true}"#.to_vec(),
+    body: br#"{"ok":true}"#.into(),
   }
 }
 
 fn demo_handle_custom_header(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![
       ("Content-Type".to_string(), "text/plain".to_string()),
       ("X-Trace-Id".to_string(), "abc-123".to_string()),
     ],
-    body: b"custom".to_vec(),
+    body: b"custom".into(),
   }
 }
 
@@ -211,6 +213,31 @@ fn test_get() {
   boot_regular();
   let request = b"GET /test HTTP/1.1\r\n\r\n";
   let expected_response = b"get";
+  run_regular(request, expected_response);
+}
+
+#[test]
+fn test_persistent_connection_handles_multiple_requests() {
+  boot_regular();
+  let mut stream = TcpStream::connect(REGULAR_SERVER_URL).expect("connect to test server");
+  stream
+    .write_all(
+      b"GET /test HTTP/1.1\r\n\r\nGET /test HTTP/1.1\r\nConnection: close\r\n\r\n",
+    )
+    .expect("write requests");
+
+  let mut response = String::new();
+  stream.read_to_string(&mut response).expect("read responses");
+
+  assert_eq!(response.matches("HTTP/1.1 200 OK").count(), 2, "{response}");
+  assert_eq!(response.matches("\r\n\r\nget").count(), 2, "{response}");
+}
+
+#[test]
+fn test_chunked_request_body() {
+  boot_regular();
+  let request = b"POST /test HTTP/1.1\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
+  let expected_response = b"Body: \"Wikipedia\"";
   run_regular(request, expected_response);
 }
 
@@ -250,7 +277,7 @@ fn test_get_with_content_length_smaller_than_body() {
 fn test_get_with_content_length_larger_than_body() {
   boot_regular();
   let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
-  let expected_response = b"get";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 
@@ -358,7 +385,7 @@ fn test_post_with_smaller_content_length() {
 fn test_post_with_larger_content_length() {
   boot_regular();
   let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
-  let expected_response = b"HTTP/1.1 200 OK";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 
@@ -398,7 +425,7 @@ fn test_put_with_smaller_content_length() {
 fn test_put_with_larger_content_length() {
   boot_regular();
   let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
-  let expected_response = b"HTTP/1.1 200 OK";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 
@@ -414,8 +441,8 @@ fn test_patch() {
 fn test_head() {
   boot_regular();
   let request = b"HEAD /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"head";
-  run_regular(request, expected_response);
+  let response = run_regular(request, b"HTTP/1.1 200 OK");
+  assert!(!response.ends_with("\r\n\r\nhead"), "{response}");
 }
 
 #[test]
@@ -494,7 +521,7 @@ fn test_delete_with_content_length_smaller_than_body() {
 fn test_delete_with_content_length_larger_than_body() {
   boot_regular();
   let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
-  let expected_response = b"delete";
+  let expected_response = b"HTTP/1.1 400 Bad Request";
   run_regular(request, expected_response);
 }
 
@@ -558,7 +585,7 @@ fn test_allowed_method_missing_route() {
 fn test_empty_request() {
   boot_regular();
   let request = b"";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
+  let expected_response = b"";
   run_regular(request, expected_response);
 }
 

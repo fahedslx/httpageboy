@@ -17,4 +17,4 @@ cargo check --features async_smol
 cargo test --features async_smol --lib
 cargo test --features async_smol --test test_async_smol
 
-cargo test --bin openapi_from_code
+cargo test --features sync --bin openapi_from_code

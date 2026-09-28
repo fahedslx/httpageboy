@@ -2,4 +2,4 @@
 set -eu
 
 sh cicd/test.sh
-sh cicd/publish.sh
+sh cicd/publish.sh "$@"

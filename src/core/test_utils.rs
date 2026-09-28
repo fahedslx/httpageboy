@@ -444,7 +444,8 @@ pub fn active_test_server_url() -> &'static str {
 }
 
 pub fn is_test_server_registered(server_url: &str) -> bool {
-  registry_guard().contains_key(server_url)
+  let registry = registry_guard();
+  registry.contains_key(server_url) || registry.values().any(|record| record.url == server_url)
 }
 
 pub fn shutdown_test_server(server_url: &str) -> TestResult {

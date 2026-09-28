@@ -15,6 +15,9 @@ categories = ["network-programming", "web-programming::http-server"]
 [lib]
 path = "src/lib.rs"
 
+[package.metadata.docs.rs]
+features = ["sync"]
+
 [features]
 sync = []
 async_tokio = ["tokio"]

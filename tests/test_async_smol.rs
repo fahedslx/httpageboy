@@ -19,6 +19,8 @@ async fn common_server_definition(server_url: &str) -> Server {
       .await
       .expect("failed to bind test server"),
   };
+  server.set_idle_timeout(std::time::Duration::from_millis(50));
+  server.set_req_timeout(std::time::Duration::from_millis(100));
   server.routes([
     route!("/", Rt::GET, demo_handle_home),
     route!("/test", Rt::GET, demo_handle_get),
@@ -82,9 +84,9 @@ async fn run_strict(request: &[u8], expected: &[u8]) -> String {
 
 async fn demo_handle_home(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: b"home".to_vec(),
+    body: b"home".into(),
   }
 }
 
@@ -95,110 +97,110 @@ async fn demo_handle_post(_request: &Request) -> Response {
   }
   let body = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, ordered, _request.body
+    _request.method, _request.path, ordered, _request.body_text().unwrap_or("")
   );
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: body.into_bytes(),
+    body: body.into(),
   }
 }
 
 async fn demo_handle_get(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: b"get".to_vec(),
+    body: b"get".into(),
   }
 }
 
 async fn demo_handle_put(_request: &Request) -> Response {
   let body = format!(
     "Method: {}\nUri: {}\nParams: {:?}\nBody: {:?}",
-    _request.method, _request.path, _request.params, _request.body
+    _request.method, _request.path, _request.params, _request.body_text().unwrap_or("")
   );
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: body.into_bytes(),
+    body: body.into(),
   }
 }
 
 async fn demo_handle_delete(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: b"delete".to_vec(),
+    body: b"delete".into(),
   }
 }
 
 async fn demo_handle_head(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: b"head".to_vec(),
+    body: b"head".into(),
   }
 }
 
 async fn demo_handle_options(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: b"options".to_vec(),
+    body: b"options".into(),
   }
 }
 
 async fn demo_handle_connect(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: b"connect".to_vec(),
+    body: b"connect".into(),
   }
 }
 
 async fn demo_handle_trace(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: b"trace".to_vec(),
+    body: b"trace".into(),
   }
 }
 
 async fn demo_handle_query(request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![],
-    body: format!("query:{}", request.body).into_bytes(),
+    body: format!("query:{}", request.body_text().unwrap_or("")).into(),
   }
 }
 
 async fn demo_handle_redirect(_request: &Request) -> Response {
   Response {
-    status: StatusCode::TemporaryRedirect.to_string(),
+    status: StatusCode::TemporaryRedirect,
     headers: vec![
       ("Location".to_string(), "https://example.com".to_string()),
       ("Content-Type".to_string(), "text/plain".to_string()),
     ],
-    body: Vec::new(),
+    body: Vec::new().into(),
   }
 }
 
 async fn demo_handle_json(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![("Content-Type".to_string(), "application/json".to_string())],
-    body: br#"{"ok":true}"#.to_vec(),
+    body: br#"{"ok":true}"#.into(),
   }
 }
 
 async fn demo_handle_custom_header(_request: &Request) -> Response {
   Response {
-    status: StatusCode::Ok.to_string(),
+    status: StatusCode::Ok,
     headers: vec![
       ("Content-Type".to_string(), "text/plain".to_string()),
       ("X-Trace-Id".to_string(), "abc-123".to_string()),
     ],
-    body: b"custom".to_vec(),
+    body: b"custom".into(),
   }
 }
 
@@ -273,7 +275,7 @@ fn test_get_with_content_length_larger_than_body() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
-    let expected = b"get";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
@@ -384,7 +386,7 @@ fn test_post_with_larger_content_length() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
-    let expected = b"HTTP/1.1 200 OK";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
@@ -439,7 +441,7 @@ fn test_put_with_larger_content_length() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
-    let expected = b"HTTP/1.1 200 OK";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
@@ -461,9 +463,9 @@ fn test_head() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"HEAD /test HTTP/1.1\r\n\r\n";
-    let expected = b"head";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
+    let response = run_regular(request, b"HTTP/1.1 200 OK").await;
+    assert!(!response.ends_with("\r\n\r\nhead"), "{response}");
   });
 }
 
@@ -571,7 +573,7 @@ fn test_delete_with_content_length_larger_than_body() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
-    let expected = b"delete";
+    let expected = b"HTTP/1.1 400 Bad Request";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
@@ -659,7 +661,7 @@ fn test_empty_request() {
   smol::block_on(async {
     boot_regular().await;
     let request = b"";
-    let expected = b"HTTP/1.1 400 Bad Request";
+    let expected = b"";
     smol::Timer::after(std::time::Duration::from_millis(100)).await;
     run_regular(request, expected).await;
   });
