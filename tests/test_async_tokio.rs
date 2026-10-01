@@ -1,16 +1,12 @@
 #![cfg(feature = "async_tokio")]
 
-use httpageboy::test_utils::{
-  TestResult, is_test_server_registered, run_test, setup_test_server, shutdown_test_server,
-};
-use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
+mod support;
+use support::{TestResult, run_test, setup_test_server};
+use httpageboy::{Request, Response, Rt, Server, StatusCode, route};
 use std::collections::BTreeMap;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:48080";
 const STRICT_SERVER_URL: &str = "127.0.0.1:48081";
-const SUITE_SERVER_URL: &str = "127.0.0.1:48082";
-const SUITE_ERROR_SERVER_URL: &str = "127.0.0.1:48083";
-const SUITE_MINIMAL_SERVER_URL: &str = "127.0.0.1:48084";
 
 async fn common_server_definition(server_url: &str) -> Server {
   let mut server = match Server::new(server_url).await {
@@ -669,119 +665,3 @@ async fn test_custom_header_is_serialized() -> TestResult {
   );
   Ok(())
 }
-
-#[tokio::test]
-async fn test_case_lifecycle_runs_hooks_per_request() -> TestResult {
-  use std::sync::{Arc, Mutex};
-
-  let order = Arc::new(Mutex::new(Vec::new()));
-  let urls = Arc::new(Mutex::new(Vec::new()));
-
-  test_case! {
-    before {
-      order.lock().unwrap().push("before");
-      setup_test_server(Some(SUITE_SERVER_URL), || common_server_definition(SUITE_SERVER_URL)).await?;
-    }
-    before_each {
-      order.lock().unwrap().push("before_each");
-    }
-    test |api| {
-      order.lock().unwrap().push("test_1");
-      urls
-        .lock()
-        .unwrap()
-        .push(httpageboy::test_utils::active_test_server_url().to_string());
-      api.run(b"GET /test HTTP/1.1\r\n\r\n", b"get").await?;
-
-      order.lock().unwrap().push("test_2");
-      urls
-        .lock()
-        .unwrap()
-        .push(httpageboy::test_utils::active_test_server_url().to_string());
-      api.run(b"GET / HTTP/1.1\r\n\r\n", b"home").await?;
-    }
-    after_each {
-      order.lock().unwrap().push("after_each");
-    }
-    after {
-      order.lock().unwrap().push("after");
-      shutdown_test_server(SUITE_SERVER_URL)?;
-    }
-  }?;
-
-  assert_eq!(
-    order.lock().unwrap().as_slice(),
-    [
-      "before",
-      "test_1",
-      "before_each",
-      "after_each",
-      "test_2",
-      "before_each",
-      "after_each",
-      "after",
-    ]
-  );
-  let urls = urls.lock().unwrap().clone();
-  assert_eq!(urls.len(), 2);
-  assert!(urls.iter().all(|url| url == &urls[0]));
-  assert!(!is_test_server_registered(SUITE_SERVER_URL));
-  assert!(std::net::TcpListener::bind(SUITE_SERVER_URL).is_ok());
-  Ok(())
-}
-
-#[tokio::test]
-async fn test_case_runs_cleanup_after_request_error() -> TestResult {
-  use std::sync::{Arc, Mutex};
-
-  let order = Arc::new(Mutex::new(Vec::new()));
-  let result = test_case! {
-    before {
-      order.lock().unwrap().push("before");
-      setup_test_server(Some(SUITE_ERROR_SERVER_URL), || {
-        common_server_definition(SUITE_ERROR_SERVER_URL)
-      })
-      .await?;
-    }
-    before_each {
-      order.lock().unwrap().push("before_each");
-    }
-    test |t| {
-      order.lock().unwrap().push("test");
-      t.run(b"GET /test HTTP/1.1\r\n\r\n", b"missing").await?;
-      order.lock().unwrap().push("after_failed_request");
-    }
-    after_each {
-      order.lock().unwrap().push("after_each");
-    }
-    after {
-      order.lock().unwrap().push("after");
-      shutdown_test_server(SUITE_ERROR_SERVER_URL)?;
-    }
-  };
-
-  assert!(result.is_err());
-  assert_eq!(
-    order.lock().unwrap().as_slice(),
-    ["before", "test", "before_each", "after_each", "after"]
-  );
-  assert!(!is_test_server_registered(SUITE_ERROR_SERVER_URL));
-  Ok(())
-}
-
-#[tokio::test]
-async fn test_case_accepts_only_test_block() -> TestResult {
-  let url = setup_test_server(Some(SUITE_MINIMAL_SERVER_URL), || {
-    common_server_definition(SUITE_MINIMAL_SERVER_URL)
-  })
-  .await?;
-  assert!(is_test_server_registered(url));
-  test_case! {
-    test |client| {
-      client.run(b"GET / HTTP/1.1\r\n\r\n", b"home").await?;
-    }
-  }?;
-  shutdown_test_server(SUITE_MINIMAL_SERVER_URL)?;
-  Ok(())
-}
-
