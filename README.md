@@ -113,6 +113,43 @@ Test helpers live in `httpageboy::test_utils` and work the same for sync and asy
 - `run_test(request, expected, target_url)` opens a TCP connection to the active server (or the URL you pass), writes a raw HTTP payload, and asserts the response contains the expected bytes.
 - `test_case!` groups ordered setup, one or more HTTP assertions, and cleanup while still using `cargo test` as the runner.
 
+Optional reporting lives in `httpageboy::test_report`. It does not change `run_test()`: it records each evaluated case, keeps the original Rust/Pageboy error untouched, and derives compact summaries from the individual results.
+
+```rust
+use httpageboy::test_report::{TestReportContext, TestReporter};
+use httpageboy::test_utils::run_test;
+use std::time::Instant;
+
+let mut reporter = TestReporter::new();
+let started = Instant::now();
+let expected = b"HTTP/1.1 403";
+let result = run_test(
+  b"QUERY /inventory/stock HTTP/1.1\r\nbusiness-id: 1\r\n\r\n{}",
+  expected,
+  None,
+);
+
+let evaluation = reporter.record_http(
+  TestReportContext::new("CP-N028/stock.read/permission_missing")
+    .group("family", "authorization")
+    .group("scenario", "permission_missing")
+    .endpoint("QUERY", "/inventory/stock")
+    .info("business-id", "1")
+    .info("permission", "stock.read"),
+  expected,
+  &result,
+  started.elapsed(),
+);
+
+println!("{evaluation}");
+println!("{}", reporter.render_summary(&["family", "scenario"]));
+reporter.write_report("results", &["family", "scenario"])?;
+reporter.fail_if_failed()?;
+```
+
+Each evaluation prints only populated context plus `Expected`, `Received`, duration, and the original `Rust/Pageboy` error on failures. `write_report` produces `results.txt`, `results.csv`, and `results.json`. Group summaries are derived from the same individual records, so summary counts never replace per-test evidence.
+
+
 Minimal sync lifecycle example:
 
 ```rust
