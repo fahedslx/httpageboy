@@ -4,6 +4,8 @@ mod support;
 use support::{TestResult, run_test, setup_test_server};
 use httpageboy::{Request, Response, Rt, Server, StatusCode, route};
 use std::collections::BTreeMap;
+use macro_rules_attribute::apply;
+use smol_macros::test;
 
 const REGULAR_SERVER_URL: &str = "127.0.0.1:28080";
 const STRICT_SERVER_URL: &str = "127.0.0.1:28081";
@@ -200,563 +202,465 @@ async fn demo_handle_custom_header(_request: &Request) -> Response {
   }
 }
 
-#[test]
-fn test_home() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET / HTTP/1.1\r\n\r\n";
-    let expected = b"home";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_home() {
+  boot_regular().await;
+  let request = b"GET / HTTP/1.1\r\n\r\n";
+  let expected = b"home";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_get() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /test HTTP/1.1\r\n\r\n";
-    let expected = b"get";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_get() {
+  boot_regular().await;
+  let request = b"GET /test HTTP/1.1\r\n\r\n";
+  let expected = b"get";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_get_with_query() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /test?foo=bar&baz=qux HTTP/1.1\r\n\r\n";
-    let expected = b"get";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_get_with_query() {
+  boot_regular().await;
+  let request = b"GET /test?foo=bar&baz=qux HTTP/1.1\r\n\r\n";
+  let expected = b"get";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_get_no_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /test HTTP/1.1\r\n\r\n";
-    let expected = b"get";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_get_no_content_length() {
+  boot_regular().await;
+  let request = b"GET /test HTTP/1.1\r\n\r\n";
+  let expected = b"get";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_get_with_content_length_matching_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
-    let expected = b"get";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_get_with_content_length_matching_body() {
+  boot_regular().await;
+  let request = b"GET /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
+  let expected = b"get";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_get_with_content_length_smaller_than_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /test HTTP/1.1\r\nContent-Length: 1\r\n\r\npong";
-    let expected = b"get";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_get_with_content_length_smaller_than_body() {
+  boot_regular().await;
+  let request = b"GET /test HTTP/1.1\r\nContent-Length: 1\r\n\r\npong";
+  let expected = b"get";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_get_with_content_length_larger_than_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
-    let expected = b"HTTP/1.1 400 Bad Request";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_get_with_content_length_larger_than_body() {
+  boot_regular().await;
+  let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
+  let expected = b"HTTP/1.1 400 Bad Request";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post() {
+  boot_regular().await;
+  let request = b"POST /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_without_content_length_empty_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test HTTP/1.1\r\n\r\n";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_without_content_length_empty_body() {
+  boot_regular().await;
+  let request = b"POST /test HTTP/1.1\r\n\r\n";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_with_query() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test?foo=bar HTTP/1.1\r\n\r\nmueve tu cuerpo";
-    let expected = b"Method: POST\nUri: /test\nParams: {\"foo\": \"bar\"}\nBody: \"mueve tu cuerpo\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_with_query() {
+  boot_regular().await;
+  let request = b"POST /test?foo=bar HTTP/1.1\r\n\r\nmueve tu cuerpo";
+  let expected = b"Method: POST\nUri: /test\nParams: {\"foo\": \"bar\"}\nBody: \"mueve tu cuerpo\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_with_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test HTTP/1.1\r\nContent-Length: 15\r\n\r\nmueve tu cuerpo";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_with_content_length() {
+  boot_regular().await;
+  let request = b"POST /test HTTP/1.1\r\nContent-Length: 15\r\n\r\nmueve tu cuerpo";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_with_params() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test/hola/que?param4=hoy&param3=hace HTTP/1.1\r\n\r\nmueve tu cuerpo";
-    let expected =
-      b"Method: POST\nUri: /test/hola/que\nParams: {\"param1\": \"hola\", \"param2\": \"que\", \"param3\": \"hace\", \"param4\": \"hoy\"}\nBody: \"mueve tu cuerpo\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_with_params() {
+  boot_regular().await;
+  let request = b"POST /test/hola/que?param4=hoy&param3=hace HTTP/1.1\r\n\r\nmueve tu cuerpo";
+  let expected =
+    b"Method: POST\nUri: /test/hola/que\nParams: {\"param1\": \"hola\", \"param2\": \"que\", \"param3\": \"hace\", \"param4\": \"hoy\"}\nBody: \"mueve tu cuerpo\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_with_incomplete_path_params() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test/hola HTTP/1.1\r\n\r\nmueve tu cuerpo";
-    let expected = b"Method: POST\nUri: /test/hola\nParams: {\"param1\": \"hola\"}\nBody: \"mueve tu cuerpo\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_with_incomplete_path_params() {
+  boot_regular().await;
+  let request = b"POST /test/hola HTTP/1.1\r\n\r\nmueve tu cuerpo";
+  let expected = b"Method: POST\nUri: /test/hola\nParams: {\"param1\": \"hola\"}\nBody: \"mueve tu cuerpo\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_without_content_length_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test HTTP/1.1\r\n\r\nbody";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_without_content_length_body() {
+  boot_regular().await;
+  let request = b"POST /test HTTP/1.1\r\n\r\nbody";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_with_matching_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nbody";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_with_matching_content_length() {
+  boot_regular().await;
+  let request = b"POST /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nbody";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_with_smaller_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test HTTP/1.1\r\nContent-Length: 2\r\n\r\nbody";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"bo\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_with_smaller_content_length() {
+  boot_regular().await;
+  let request = b"POST /test HTTP/1.1\r\nContent-Length: 2\r\n\r\nbody";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"bo\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_post_with_larger_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
-    let expected = b"HTTP/1.1 400 Bad Request";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_post_with_larger_content_length() {
+  boot_regular().await;
+  let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
+  let expected = b"HTTP/1.1 400 Bad Request";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_put() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"PUT /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
-    let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_put() {
+  boot_regular().await;
+  let request = b"PUT /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
+  let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_put_without_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"PUT /test HTTP/1.1\r\n\r\nput";
-    let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_put_without_content_length() {
+  boot_regular().await;
+  let request = b"PUT /test HTTP/1.1\r\n\r\nput";
+  let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_put_with_matching_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"PUT /test HTTP/1.1\r\nContent-Length: 3\r\n\r\nput";
-    let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_put_with_matching_content_length() {
+  boot_regular().await;
+  let request = b"PUT /test HTTP/1.1\r\nContent-Length: 3\r\n\r\nput";
+  let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_put_with_smaller_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"PUT /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nput";
-    let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"p\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_put_with_smaller_content_length() {
+  boot_regular().await;
+  let request = b"PUT /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nput";
+  let expected = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"p\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_put_with_larger_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
-    let expected = b"HTTP/1.1 400 Bad Request";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_put_with_larger_content_length() {
+  boot_regular().await;
+  let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
+  let expected = b"HTTP/1.1 400 Bad Request";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_patch() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"PATCH /test HTTP/1.1\r\n\r\npatch";
-    let expected = b"Method: PATCH\nUri: /test\nParams: {}\nBody: \"patch\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_patch() {
+  boot_regular().await;
+  let request = b"PATCH /test HTTP/1.1\r\n\r\npatch";
+  let expected = b"Method: PATCH\nUri: /test\nParams: {}\nBody: \"patch\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_head() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"HEAD /test HTTP/1.1\r\n\r\n";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    let response = run_regular(request, b"HTTP/1.1 200 OK").await;
-    assert!(!response.ends_with("\r\n\r\nhead"), "{response}");
-  });
+#[apply(test!)]
+async fn test_head() {
+  boot_regular().await;
+  let request = b"HEAD /test HTTP/1.1\r\n\r\n";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  let response = run_regular(request, b"HTTP/1.1 200 OK").await;
+  assert!(!response.ends_with("\r\n\r\nhead"), "{response}");
 }
 
-#[test]
-fn test_options() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"OPTIONS /test HTTP/1.1\r\n\r\n";
-    let expected = b"options";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_options() {
+  boot_regular().await;
+  let request = b"OPTIONS /test HTTP/1.1\r\n\r\n";
+  let expected = b"options";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_connect() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"CONNECT /test HTTP/1.1\r\n\r\n";
-    let expected = b"connect";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_connect() {
+  boot_regular().await;
+  let request = b"CONNECT /test HTTP/1.1\r\n\r\n";
+  let expected = b"connect";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_trace() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"TRACE /test HTTP/1.1\r\n\r\n";
-    let expected = b"trace";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_trace() {
+  boot_regular().await;
+  let request = b"TRACE /test HTTP/1.1\r\n\r\n";
+  let expected = b"trace";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_query_with_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"QUERY /query HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
-    let expected = b"query:hello";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_query_with_body() {
+  boot_regular().await;
+  let request = b"QUERY /query HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
+  let expected = b"query:hello";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_query_without_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"QUERY /query HTTP/1.1\r\n\r\nhello";
-    let expected = b"query:hello";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_query_without_content_length() {
+  boot_regular().await;
+  let request = b"QUERY /query HTTP/1.1\r\n\r\nhello";
+  let expected = b"query:hello";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_delete() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"DELETE /test HTTP/1.1\r\n\r\n";
-    let expected = b"delete";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_delete() {
+  boot_regular().await;
+  let request = b"DELETE /test HTTP/1.1\r\n\r\n";
+  let expected = b"delete";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_delete_no_content_length() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"DELETE /test HTTP/1.1\r\n\r\n";
-    let expected = b"delete";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_delete_no_content_length() {
+  boot_regular().await;
+  let request = b"DELETE /test HTTP/1.1\r\n\r\n";
+  let expected = b"delete";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_delete_with_content_length_matching_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
-    let expected = b"delete";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_delete_with_content_length_matching_body() {
+  boot_regular().await;
+  let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
+  let expected = b"delete";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_delete_with_content_length_smaller_than_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nping";
-    let expected = b"delete";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_delete_with_content_length_smaller_than_body() {
+  boot_regular().await;
+  let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nping";
+  let expected = b"delete";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_delete_with_content_length_larger_than_body() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
-    let expected = b"HTTP/1.1 400 Bad Request";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_delete_with_content_length_larger_than_body() {
+  boot_regular().await;
+  let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
+  let expected = b"HTTP/1.1 400 Bad Request";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_strict_mode_without_content_length() {
-  smol::block_on(async {
-    boot_strict().await;
-    let request = b"POST /test HTTP/1.1\r\n\r\npayload";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_strict(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_strict_mode_without_content_length() {
+  boot_strict().await;
+  let request = b"POST /test HTTP/1.1\r\n\r\npayload";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_strict(request, expected).await;
 }
 
-#[test]
-fn test_strict_mode_with_content_length() {
-  smol::block_on(async {
-    boot_strict().await;
-    let request = b"POST /test HTTP/1.1\r\nContent-Length: 7\r\n\r\npayload";
-    let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_strict(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_strict_mode_with_content_length() {
+  boot_strict().await;
+  let request = b"POST /test HTTP/1.1\r\nContent-Length: 7\r\n\r\npayload";
+  let expected = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_strict(request, expected).await;
 }
 
-#[test]
-fn test_strict_mode_get_without_content_length() {
-  smol::block_on(async {
-    boot_strict().await;
-    let request = b"GET /test HTTP/1.1\r\n\r\n";
-    let expected = b"get";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_strict(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_strict_mode_get_without_content_length() {
+  boot_strict().await;
+  let request = b"GET /test HTTP/1.1\r\n\r\n";
+  let expected = b"get";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_strict(request, expected).await;
 }
 
-#[test]
-fn test_file_exists() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /numano.png HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    let expected = b"HTTP/1.1 200 OK";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_file_exists() {
+  boot_regular().await;
+  let request = b"GET /numano.png HTTP/1.1\r\nHost: localhost\r\n\r\n";
+  let expected = b"HTTP/1.1 200 OK";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_file_not_found() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET /test.png HTTP/1.1\r\n\r\n";
-    let expected = b"HTTP/1.1 404 Not Found";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_file_not_found() {
+  boot_regular().await;
+  let request = b"GET /test.png HTTP/1.1\r\n\r\n";
+  let expected = b"HTTP/1.1 404 Not Found";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_method_not_allowed() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"BREW /coffee HTTP/1.1\r\n\r\n";
-    let expected = b"HTTP/1.1 405 Method Not Allowed";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_method_not_allowed() {
+  boot_regular().await;
+  let request = b"BREW /coffee HTTP/1.1\r\n\r\n";
+  let expected = b"HTTP/1.1 405 Method Not Allowed";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_allowed_method_missing_route() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"TRACE /missing HTTP/1.1\r\n\r\n";
-    let expected = b"HTTP/1.1 404 Not Found";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_allowed_method_missing_route() {
+  boot_regular().await;
+  let request = b"TRACE /missing HTTP/1.1\r\n\r\n";
+  let expected = b"HTTP/1.1 404 Not Found";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_empty_request() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"";
-    let expected = b"";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_empty_request() {
+  boot_regular().await;
+  let request = b"";
+  let expected = b"";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_malformed_request() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"THIS_IS_NOT_HTTP\r\n\r\n";
-    let expected = b"HTTP/1.1 400 Bad Request";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_malformed_request() {
+  boot_regular().await;
+  let request = b"THIS_IS_NOT_HTTP\r\n\r\n";
+  let expected = b"HTTP/1.1 400 Bad Request";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_unsupported_http_version() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"GET / HTTP/0.9\r\n\r\n";
-    let expected = b"HTTP/1.1 505 HTTP Version Not Supported";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_unsupported_http_version() {
+  boot_regular().await;
+  let request = b"GET / HTTP/0.9\r\n\r\n";
+  let expected = b"HTTP/1.1 505 HTTP Version Not Supported";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_long_path() {
-  smol::block_on(async {
-    boot_regular().await;
-    let long_path = "/".to_string() + &"a".repeat(10_000);
-    let request = format!("GET {} HTTP/1.1\r\n\r\n", long_path);
-    let expected = b"HTTP/1.1 414 URI Too Long";
-    run_regular(request.as_bytes(), expected).await;
-  });
+#[apply(test!)]
+async fn test_long_path() {
+  boot_regular().await;
+  let long_path = "/".to_string() + &"a".repeat(10_000);
+  let request = format!("GET {} HTTP/1.1\r\n\r\n", long_path);
+  let expected = b"HTTP/1.1 414 URI Too Long";
+  run_regular(request.as_bytes(), expected).await;
 }
 
-#[test]
-fn test_missing_method() {
-  smol::block_on(async {
-    boot_regular().await;
-    let request = b"/ HTTP/1.1\r\n\r\n";
-    let expected = b"HTTP/1.1 400 Bad Request";
-    smol::Timer::after(std::time::Duration::from_millis(100)).await;
-    run_regular(request, expected).await;
-  });
+#[apply(test!)]
+async fn test_missing_method() {
+  boot_regular().await;
+  let request = b"/ HTTP/1.1\r\n\r\n";
+  let expected = b"HTTP/1.1 400 Bad Request";
+  smol::Timer::after(std::time::Duration::from_millis(100)).await;
+  run_regular(request, expected).await;
 }
 
-#[test]
-fn test_redirect_with_location_header() {
-  smol::block_on(async {
-    boot_regular().await;
-    let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect").await;
-    assert!(
-      response.contains("Location: https://example.com"),
-      "missing Location header: {}",
-      response
-    );
-    assert!(
-      response.contains("Content-Length: 0"),
-      "wrong Content-Length for redirect: {}",
-      response
-    );
-  });
+#[apply(test!)]
+async fn test_redirect_with_location_header() {
+  boot_regular().await;
+  let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect").await;
+  assert!(
+    response.contains("Location: https://example.com"),
+    "missing Location header: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Length: 0"),
+    "wrong Content-Length for redirect: {}",
+    response
+  );
 }
 
-#[test]
-fn test_json_content_type_header() {
-  smol::block_on(async {
-    boot_regular().await;
-    let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#).await;
-    assert!(
-      response.contains("Content-Type: application/json"),
-      "missing JSON content type: {}",
-      response
-    );
-    assert!(
-      response.contains("Content-Length: 11"),
-      "wrong Content-Length for JSON: {}",
-      response
-    );
-  });
+#[apply(test!)]
+async fn test_json_content_type_header() {
+  boot_regular().await;
+  let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#).await;
+  assert!(
+    response.contains("Content-Type: application/json"),
+    "missing JSON content type: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Length: 11"),
+    "wrong Content-Length for JSON: {}",
+    response
+  );
 }
 
-#[test]
-fn test_custom_header_is_serialized() {
-  smol::block_on(async {
-    boot_regular().await;
-    let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom").await;
-    assert!(
-      response.contains("X-Trace-Id: abc-123"),
-      "missing custom header: {}",
-      response
-    );
-    assert!(
-      response.contains("Content-Type: text/plain"),
-      "missing Content-Type: {}",
-      response
-    );
-  });
+#[apply(test!)]
+async fn test_custom_header_is_serialized() {
+  boot_regular().await;
+  let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom").await;
+  assert!(
+    response.contains("X-Trace-Id: abc-123"),
+    "missing custom header: {}",
+    response
+  );
+  assert!(
+    response.contains("Content-Type: text/plain"),
+    "missing Content-Type: {}",
+    response
+  );
 }
