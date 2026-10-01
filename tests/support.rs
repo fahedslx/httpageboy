@@ -1,5 +1,5 @@
 use httpageboy::Server;
-use qata::{TestError, TestResult};
+pub use qata::{TestError, TestResult};
 use std::cell::RefCell;
 use std::collections::HashMap;
 #[cfg(feature = "sync")]
