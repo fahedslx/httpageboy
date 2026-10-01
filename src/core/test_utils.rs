@@ -193,6 +193,14 @@ where
   BeforeEach: AsyncTestHook,
   AfterEach: AsyncTestHook,
 {
+  #[doc(hidden)]
+  pub fn new(before_each: BeforeEach, after_each: AfterEach) -> Self {
+    Self {
+      before_each,
+      after_each,
+    }
+  }
+
   pub async fn run(&mut self, request: &[u8], expected_response: &[u8]) -> TestResult<String> {
     let result = match self.before_each.call().await {
       Ok(()) => run_test(request, expected_response, None).await,
@@ -312,22 +320,45 @@ macro_rules! test_case {
 ))]
 #[macro_export]
 macro_rules! test_case {
-  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {
-    $crate::test_utils::run_test_case(
-      || async { $before Ok(()) },
-      || async { $before_each Ok(()) },
-      |__httpageboy_ctx| -> $crate::test_utils::TestFuture<'_> {
-        Box::pin(async {
-          let $ctx = __httpageboy_ctx;
-          $test
+  (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block after $after:block) => {{
+    let mut __httpageboy_result: $crate::test_utils::TestResult = async {
+      $before
+      Ok(())
+    }
+    .await;
+
+    if __httpageboy_result.is_ok() {
+      let mut __httpageboy_ctx = $crate::test_utils::TestContext::new(
+        || async {
+          $before_each
           Ok(())
-        })
-      },
-      || async { $after_each Ok(()) },
-      || async { $after Ok(()) },
-    )
-    .await
-  };
+        },
+        || async {
+          $after_each
+          Ok(())
+        },
+      );
+
+      __httpageboy_result = async {
+        let $ctx = &mut __httpageboy_ctx;
+        $test
+        Ok(())
+      }
+      .await;
+    }
+
+    let __httpageboy_cleanup: $crate::test_utils::TestResult = async {
+      $after
+      Ok(())
+    }
+    .await;
+
+    match (__httpageboy_result, __httpageboy_cleanup) {
+      (Ok(()), Ok(())) => Ok(()),
+      (Err(err), _) => Err(err),
+      (Ok(()), Err(err)) => Err(err),
+    }
+  }};
   (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block) => {
     $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each $after_each after {} }
   };

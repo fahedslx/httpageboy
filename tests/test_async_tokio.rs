@@ -785,3 +785,22 @@ async fn test_case_accepts_only_test_block() -> TestResult {
   Ok(())
 }
 
+#[tokio::test]
+async fn test_case_accepts_non_static_local_captures() -> TestResult {
+  let prefix = String::from("local");
+  let borrowed = prefix.as_str();
+  let value = 42;
+
+  test_case! {
+    test |_client| {
+      tokio::task::yield_now().await;
+      assert_eq!(borrowed, "local");
+      assert_eq!(format!("{borrowed}-{value}"), "local-42");
+    }
+  }?;
+
+  assert_eq!(prefix, "local");
+  Ok(())
+}
+
+
