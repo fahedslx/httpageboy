@@ -40,5 +40,6 @@ tokio = { version = "1", optional = true, features = [
 ] }
 
 [dev-dependencies]
+qata = { git = "https://gitlab.com/numanope/libs/rs/qata.git", rev = "bc7ca4e66e3e0f8a584b7eec67bf051060cee016" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

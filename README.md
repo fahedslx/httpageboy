@@ -108,96 +108,11 @@ Response {
 
 ## Testing
 
-Test helpers live in `httpageboy::test_utils` and work the same for sync and async runtimes:
-- `setup_test_server(server_url, factory)` starts a server once per URL and marks it active (pass `None` to reuse the default `127.0.0.1:0` and let the OS pick a port).
-- `run_test(request, expected, target_url)` opens a TCP connection to the active server (or the URL you pass), writes a raw HTTP payload, and asserts the response contains the expected bytes.
-- `test_case!` groups ordered setup, one or more HTTP assertions, and cleanup while still using `cargo test` as the runner.
+Generic lifecycle primitives belong to [QAta](https://gitlab.com/numanope/libs/rs/qata).
 
-Minimal sync lifecycle example:
+HTTPageboy keeps only its HTTP-specific test adapter in `tests/support.rs`: server startup, raw TCP requests, response matching, and runtime-specific server execution. The generic `TestError` and `TestResult` types come from QAta.
 
-```rust
-#![cfg(feature = "sync")]
-use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
-use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
-
-const TEST_URL: &str = "127.0.0.1:0";
-
-fn server_factory() -> Server {
-  let mut server = Server::new(TEST_URL, 10).unwrap();
-  server.routes([route!("/", Rt::GET, home)]);
-  server
-}
-
-fn home(_req: &Request) -> Response {
-  Response {
-    status: StatusCode::Ok,
-    headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: "home".into(),
-  }
-}
-
-#[test]
-fn home_works() -> TestResult {
-  test_case! {
-    before {
-      setup_test_server(Some(TEST_URL), || server_factory())?;
-    }
-    before_each {
-      // Runs before each client.run(...).
-    }
-    test |client| {
-      client.run(b"GET / HTTP/1.1\r\n\r\n", b"200 OK")?;
-      client.run(b"GET / HTTP/1.1\r\n\r\n", b"home")?;
-    }
-    after_each {
-      // Runs after each client.run(...), even if that request fails.
-    }
-    after {
-      shutdown_test_server(TEST_URL)?;
-    }
-  }
-}
-```
-
-Minimal tokio lifecycle example:
-
-```rust
-#![cfg(feature = "async_tokio")]
-use httpageboy::test_utils::{setup_test_server, shutdown_test_server, TestResult};
-use httpageboy::{Request, Response, Rt, Server, StatusCode, route, test_case};
-
-const TEST_URL: &str = "127.0.0.1:0";
-
-async fn server_factory() -> Server {
-  let mut server = Server::new(TEST_URL).await.unwrap();
-  server.routes([route!("/", Rt::GET, home)]);
-  server
-}
-
-async fn home(_req: &Request) -> Response {
-  Response {
-    status: StatusCode::Ok,
-    headers: vec![("Content-Type".into(), "text/plain".into())],
-    body: "home".into(),
-  }
-}
-
-#[tokio::test]
-async fn home_works() -> TestResult {
-  test_case! {
-    before {
-      setup_test_server(Some(TEST_URL), || server_factory()).await?;
-    }
-    test |client| {
-      client.run(b"GET / HTTP/1.1\r\n\r\n", b"200 OK").await?;
-      client.run(b"GET / HTTP/1.1\r\n\r\n", b"home").await?;
-    }
-    after {
-      shutdown_test_server(TEST_URL)?;
-    }
-  }
-}
-```
+Per-runtime integration tests remain in this repository because they validate HTTPageboy behavior directly.
 
 ## CORS
 
