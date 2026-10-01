@@ -6,5 +6,6 @@ pub mod route;
 pub mod response;
 pub mod status_code;
 pub mod upgrade;
-pub mod test_utils;\npub mod test_report;
+pub mod test_utils;
+pub mod test_report;
 pub mod utils;

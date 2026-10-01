@@ -415,7 +415,7 @@ fn pairs_line(values: &[(String, String)]) -> String {
 }
 
 fn csv_cell(value: &str) -> String {
-  if value.contains([',', '"', '\n', '\r']) {
+  if value.chars().any(|ch| matches!(ch, ',' | '"' | '\n' | '\r')) {
     format!("\"{}\"", value.replace('"', "\"\""))
   } else {
     value.to_string()
