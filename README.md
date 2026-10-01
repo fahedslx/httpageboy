@@ -141,13 +141,13 @@ let evaluation = reporter.record_http(
   started.elapsed(),
 );
 
-println!("{evaluation}");
+println!("{}", reporter.render_last().unwrap());
 println!("{}", reporter.render_summary(&["family", "scenario"]));
 reporter.write_report("results", &["family", "scenario"])?;
 reporter.fail_if_failed()?;
 ```
 
-Each evaluation prints only populated context plus `Expected`, `Received`, duration, and the original `Rust/Pageboy` error on failures. `write_report` produces `results.txt`, `results.csv`, and `results.json`. Group summaries are derived from the same individual records, so summary counts never replace per-test evidence.
+Each evaluation prints only populated context plus `Expected`, `Received`, duration, and the original `Rust/Pageboy` error on failures. Text rendering inserts a small numbered separator such as `\n/--- TEST NUMERO 001 ---/\n` between evaluations. `write_report` produces `results.txt`, `results.csv`, and `results.json`. Group summaries are derived from the same individual records, so summary counts never replace per-test evidence.
 
 
 Minimal sync lifecycle example:

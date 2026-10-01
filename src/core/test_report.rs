@@ -78,7 +78,7 @@ pub struct TestEvaluation {
 
 impl fmt::Display for TestEvaluation {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    writeln!(f, "----- TEST {} -----", self.id)?;
+    writeln!(f, "Test ID: {}", self.id)?;
     match (&self.method, &self.path) {
       (Some(method), Some(path)) => writeln!(f, "{} · {} {}", self.status, method, path)?,
       _ => writeln!(f, "{}", self.status)?,
@@ -295,12 +295,32 @@ impl TestReporter {
     output
   }
 
+  pub fn render_evaluation(&self, index: usize) -> Option<String> {
+    self.evaluations.get(index).map(|evaluation| {
+      format!(
+        "\n/--- TEST NUMERO {:03} ---/\n\n{}",
+        index + 1,
+        evaluation
+      )
+    })
+  }
+
+  pub fn render_last(&self) -> Option<String> {
+    self.evaluations
+      .len()
+      .checked_sub(1)
+      .and_then(|index| self.render_evaluation(index))
+  }
+
   pub fn render_text(&self, group_keys: &[&str]) -> String {
     let mut output = String::new();
-    for evaluation in &self.evaluations {
-      output.push_str(&evaluation.to_string());
-      output.push('\n');
+    for index in 0..self.evaluations.len() {
+      if let Some(rendered) = self.render_evaluation(index) {
+        output.push_str(&rendered);
+        output.push('\n');
+      }
     }
+    output.push_str("\n");
     output.push_str(&self.render_summary(group_keys));
     output
   }
@@ -541,6 +561,7 @@ mod tests {
     assert_eq!(evaluation.duration_ms, 84);
 
     let rendered = evaluation.to_string();
+    assert!(rendered.contains("Test ID: CP-N028/stock.read/permission_missing"));
     assert!(rendered.contains("Expected:\nHTTP/1.1 403"));
     assert!(rendered.contains("Received:\nHTTP/1.1 404 Not Found"));
     assert!(rendered.contains(&format!("Rust/Pageboy:\n{}", raw)));
@@ -594,6 +615,25 @@ mod tests {
   }
 
   #[test]
+  fn renders_small_visible_numbered_separator_between_tests() {
+    let mut reporter = TestReporter::new();
+    for id in ["A", "B"] {
+      reporter.record_manual(
+        TestReportContext::new(id),
+        TestStatus::Pass,
+        Some("200"),
+        Some("200"),
+        None::<String>,
+        Duration::from_millis(1),
+      );
+    }
+
+    let rendered = reporter.render_text(&[]);
+    assert!(rendered.contains("\n/--- TEST NUMERO 001 ---/\n\nTest ID: A"));
+    assert!(rendered.contains("\n/--- TEST NUMERO 002 ---/\n\nTest ID: B"));
+  }
+
+  #[test]
   fn writes_text_csv_and_json_reports() {
     let mut reporter = TestReporter::new();
     reporter.record_manual(
@@ -614,7 +654,9 @@ mod tests {
     let _ = fs::remove_dir_all(&dir);
     let files = reporter.write_report(&dir, &["family"]).unwrap();
 
-    assert!(fs::read_to_string(&files.text).unwrap().contains("----- TEST A -----"));
+    let text = fs::read_to_string(&files.text).unwrap();
+    assert!(text.contains("/--- TEST NUMERO 001 ---/"));
+    assert!(text.contains("Test ID: A"));
     assert!(fs::read_to_string(&files.csv).unwrap().contains("Test ID,Status"));
     assert!(fs::read_to_string(&files.json).unwrap().contains("\"results\""));
 
