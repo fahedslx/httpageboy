@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt;
 #[cfg(feature = "sync")]
 use std::io::{Read, Write};
 #[cfg(feature = "sync")]
@@ -50,46 +49,7 @@ use crate::runtime::r#async::smol::Server;
 ))]
 use crate::runtime::r#async::async_std::Server;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TestError {
-  pub message: String,
-}
-
-pub type TestResult<T = ()> = Result<T, TestError>;
-
-impl TestError {
-  pub fn new(message: impl Into<String>) -> Self {
-    Self {
-      message: message.into(),
-    }
-  }
-}
-
-impl fmt::Display for TestError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&self.message)
-  }
-}
-
-impl std::error::Error for TestError {}
-
-impl From<std::io::Error> for TestError {
-  fn from(err: std::io::Error) -> Self {
-    Self::new(err.to_string())
-  }
-}
-
-impl From<&str> for TestError {
-  fn from(err: &str) -> Self {
-    Self::new(err)
-  }
-}
-
-impl From<String> for TestError {
-  fn from(err: String) -> Self {
-    Self::new(err)
-  }
-}
+pub use qata::{TestError, TestResult};
 
 #[cfg(feature = "sync")]
 pub struct TestContext<BeforeEach, AfterEach> {
