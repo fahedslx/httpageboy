@@ -49,7 +49,7 @@ use crate::runtime::r#async::smol::Server;
 ))]
 use crate::runtime::r#async::async_std::Server;
 
-pub use qata::{TestError, TestResult};
+pub use qata::{TestError, TestResult, merge_results};
 
 use crate::core::test_report::{TestReportContext, TestReporter};
 
@@ -100,11 +100,7 @@ where
     result = test(&mut context);
   }
   let cleanup = after();
-  match (result, cleanup) {
-    (Ok(()), Ok(())) => Ok(()),
-    (Err(err), _) => Err(err),
-    (Ok(()), Err(err)) => Err(err),
-  }
+  merge_results(result, Ok(()), cleanup)
 }
 
 #[cfg(all(
@@ -206,11 +202,7 @@ where
     result = test(&mut context).await;
   }
   let cleanup = after().await;
-  match (result, cleanup) {
-    (Ok(()), Ok(())) => Ok(()),
-    (Err(err), _) => Err(err),
-    (Ok(()), Err(err)) => Err(err),
-  }
+  merge_results(result, Ok(()), cleanup)
 }
 
 #[cfg(feature = "sync")]
@@ -315,11 +307,11 @@ macro_rules! test_case {
     }
     .await;
 
-    match (__httpageboy_result, __httpageboy_cleanup) {
-      (Ok(()), Ok(())) => Ok(()),
-      (Err(err), _) => Err(err),
-      (Ok(()), Err(err)) => Err(err),
-    }
+    $crate::test_utils::merge_results(
+      __httpageboy_result,
+      Ok(()),
+      __httpageboy_cleanup,
+    )
   }};
   (before $before:block before_each $before_each:block test |$ctx:ident| $test:block after_each $after_each:block) => {
     $crate::test_case! { before $before before_each $before_each test |$ctx| $test after_each $after_each after {} }
