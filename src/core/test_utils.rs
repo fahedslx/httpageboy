@@ -466,18 +466,13 @@ fn compare_response(buffer: Vec<u8>, expected_response: &[u8]) -> TestResult<Str
   }
 }
 
-fn trace_http_result(
+fn render_http_trace(
+  id: impl Into<String>,
   request: &[u8],
   expected_response: &[u8],
   result: &TestResult<String>,
   duration: Duration,
-) {
-  if std::env::var_os("HTTPAGEBOY_TRACE").is_none() {
-    return;
-  }
-
-  let id = std::env::var("HTTPAGEBOY_TEST_ID")
-    .unwrap_or_else(|_| "httpageboy-http".to_string());
+) -> String {
   let request_line = String::from_utf8_lossy(request)
     .lines()
     .next()
@@ -493,8 +488,23 @@ fn trace_http_result(
 
   let mut reporter = TestReporter::new();
   reporter.record_http(context, expected_response, result, duration);
+  reporter.render_last().unwrap_or_default()
+}
 
-  if let Some(rendered) = reporter.render_last() {
+fn trace_http_result(
+  request: &[u8],
+  expected_response: &[u8],
+  result: &TestResult<String>,
+  duration: Duration,
+) {
+  if std::env::var_os("HTTPAGEBOY_TRACE").is_none() {
+    return;
+  }
+
+  let id = std::env::var("HTTPAGEBOY_TEST_ID")
+    .unwrap_or_else(|_| "httpageboy-http".to_string());
+  let rendered = render_http_trace(id, request, expected_response, result, duration);
+  if !rendered.is_empty() {
     println!("{rendered}");
   }
 }
@@ -828,3 +838,45 @@ pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Opti
   trace_http_result(request, expected_response, &result, started.elapsed());
   result
 }
+
+#[cfg(test)]
+mod trace_tests {
+  use super::*;
+
+  #[test]
+  fn renders_successful_http_evidence() {
+    let result = Ok(
+      "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"id\":7}".to_string(),
+    );
+    let rendered = render_http_trace(
+      "sample-pass",
+      b"PUT /orders/7 HTTP/1.1\r\n\r\n",
+      b"HTTP/1.1 200",
+      &result,
+      Duration::from_millis(12),
+    );
+
+    assert!(rendered.contains("Test ID: sample-pass"));
+    assert!(rendered.contains("PASS · PUT /orders/7"));
+    assert!(rendered.contains("Expected:\nHTTP/1.1 200"));
+    assert!(rendered.contains("Received:\nHTTP/1.1 200 OK"));
+  }
+
+  #[test]
+  fn renders_failed_http_evidence_without_rewriting_pageboy_error() {
+    let raw = "received response did not contain expected response\nreceived: HTTP/1.1 404 Not Found\r\n\r\nmissing\nexpected: HTTP/1.1 200";
+    let result = Err(TestError::new(raw));
+    let rendered = render_http_trace(
+      "sample-fail",
+      b"GET /orders/7 HTTP/1.1\r\n\r\n",
+      b"HTTP/1.1 200",
+      &result,
+      Duration::from_millis(8),
+    );
+
+    assert!(rendered.contains("FAIL · GET /orders/7"));
+    assert!(rendered.contains("Received:\nHTTP/1.1 404 Not Found"));
+    assert!(rendered.contains(&format!("Rust/Pageboy:\n{raw}")));
+  }
+}
+
