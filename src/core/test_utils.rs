@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const POOL_SIZE: u8 = 10;
 pub const DEFAULT_TEST_SERVER_URL: &str = "127.0.0.1:0";
@@ -50,6 +50,8 @@ use crate::runtime::r#async::smol::Server;
 use crate::runtime::r#async::async_std::Server;
 
 pub use qata::{TestError, TestResult};
+
+use crate::core::test_report::{TestReportContext, TestReporter};
 
 #[cfg(feature = "sync")]
 pub struct TestContext<BeforeEach, AfterEach> {
@@ -472,6 +474,39 @@ fn compare_response(buffer: Vec<u8>, expected_response: &[u8]) -> TestResult<Str
   }
 }
 
+fn trace_http_result(
+  request: &[u8],
+  expected_response: &[u8],
+  result: &TestResult<String>,
+  duration: Duration,
+) {
+  if std::env::var_os("HTTPAGEBOY_TRACE").is_none() {
+    return;
+  }
+
+  let id = std::env::var("HTTPAGEBOY_TEST_ID")
+    .unwrap_or_else(|_| "httpageboy-http".to_string());
+  let request_line = String::from_utf8_lossy(request)
+    .lines()
+    .next()
+    .unwrap_or_default()
+    .trim_end_matches('\r')
+    .to_string();
+  let mut parts = request_line.split_whitespace();
+  let mut context = TestReportContext::new(id);
+
+  if let (Some(method), Some(path)) = (parts.next(), parts.next()) {
+    context = context.endpoint(method, path);
+  }
+
+  let mut reporter = TestReporter::new();
+  reporter.record_http(context, expected_response, result, duration);
+
+  if let Some(rendered) = reporter.render_last() {
+    println!("{rendered}");
+  }
+}
+
 #[cfg(feature = "sync")]
 fn wait_for_server(url: &str) -> TestResult {
   for _ in 0..WAIT_ATTEMPTS {
@@ -485,6 +520,7 @@ fn wait_for_server(url: &str) -> TestResult {
 
 #[cfg(feature = "sync")]
 fn perform_test(url: &str, request: &[u8], expected_response: &[u8]) -> TestResult<String> {
+  let started = Instant::now();
   wait_for_server(url)?;
   let mut stream = TcpStream::connect(url)
     .map_err(|err| TestError::new(format!("failed to connect to test server {}: {}", url, err)))?;
@@ -498,7 +534,9 @@ fn perform_test(url: &str, request: &[u8], expected_response: &[u8]) -> TestResu
     .read_to_end(&mut buffer)
     .map_err(|err| TestError::new(format!("failed to read response from test server: {}", err)))?;
 
-  compare_response(buffer, expected_response)
+  let result = compare_response(buffer, expected_response);
+  trace_http_result(request, expected_response, &result, started.elapsed());
+  result
 }
 
 #[cfg(feature = "sync")]
@@ -587,6 +625,7 @@ where
 
 #[cfg(all(feature = "async_tokio", not(feature = "sync")))]
 pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Option<&str>) -> TestResult<String> {
+  let started = Instant::now();
   use tokio::io::{AsyncReadExt, AsyncWriteExt};
   let url = target_url
     .map(|s| s.to_string())
@@ -621,7 +660,9 @@ pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Opti
     .await
     .map_err(|err| TestError::new(format!("failed to read response from test server: {}", err)))?;
 
-  compare_response(buffer, expected_response)
+  let result = compare_response(buffer, expected_response);
+  trace_http_result(request, expected_response, &result, started.elapsed());
+  result
 }
 
 #[cfg(all(feature = "async_std", not(any(feature = "sync", feature = "async_tokio"))))]
@@ -666,6 +707,7 @@ where
 
 #[cfg(all(feature = "async_std", not(any(feature = "sync", feature = "async_tokio"))))]
 pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Option<&str>) -> TestResult<String> {
+  let started = Instant::now();
   use async_std::io::prelude::*;
   use async_std::net::{Shutdown, TcpStream};
   let url = target_url
@@ -701,7 +743,9 @@ pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Opti
     .await
     .map_err(|err| TestError::new(format!("failed to read response from test server: {}", err)))?;
 
-  compare_response(buffer, expected_response)
+  let result = compare_response(buffer, expected_response);
+  trace_http_result(request, expected_response, &result, started.elapsed());
+  result
 }
 
 #[cfg(all(
@@ -752,6 +796,7 @@ where
   not(any(feature = "sync", feature = "async_tokio", feature = "async_std"))
 ))]
 pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Option<&str>) -> TestResult<String> {
+  let started = Instant::now();
   use smol::io::AsyncReadExt;
   use smol::io::AsyncWriteExt;
   let url = target_url
@@ -787,5 +832,7 @@ pub async fn run_test(request: &[u8], expected_response: &[u8], target_url: Opti
     .await
     .map_err(|err| TestError::new(format!("failed to read response from test server: {}", err)))?;
 
-  compare_response(buffer, expected_response)
+  let result = compare_response(buffer, expected_response);
+  trace_http_result(request, expected_response, &result, started.elapsed());
+  result
 }
