@@ -108,11 +108,20 @@ Response {
 
 ## Testing
 
-Generic lifecycle primitives belong to [QAta](https://gitlab.com/numanope/libs/rs/qata).
+HTTPageboy uses [QAta](https://gitlab.com/numanope/libs/rs/qata) as a test helper.
 
-HTTPageboy keeps only its HTTP-specific test adapter in `tests/support.rs`: server startup, raw TCP requests, response matching, and runtime-specific server execution. The generic `TestError` and `TestResult` types come from QAta.
+QAta provides the generic `test_case!`, `TestError`, and `TestResult` primitives. HTTPageboy keeps HTTP-specific support in `tests/support.rs`: shared server startup, raw TCP requests, response matching, shutdown, and runtime-specific execution.
 
-Per-runtime integration tests remain in this repository because they validate HTTPageboy behavior directly.
+The runtime test attributes remain owned by HTTPageboy:
+
+```text
+sync:      #[test]
+tokio:     #[tokio_test]
+async_std: #[async_std_test]
+smol:      #[smol_test]
+```
+
+QAta forwards those attributes without depending on any runtime. Per-runtime integration tests remain in this repository because they validate HTTPageboy directly.
 
 ## CORS
 
