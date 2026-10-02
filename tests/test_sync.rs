@@ -1,6 +1,7 @@
 #![cfg(feature = "sync")]
 mod support;
-use support::{POOL_SIZE, TestResult, run_test, setup_test_server};
+use qata::test_case;
+use support::{POOL_SIZE, run_test, setup_test_server};
 use httpageboy::{Request, Response, Rt, Server, StatusCode, route};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -196,475 +197,475 @@ fn demo_handle_custom_header(_request: &Request) -> Response {
   }
 }
 
-#[test]
-fn test_home() {
-  boot_regular();
-  let request = b"GET / HTTP/1.1\r\n\r\n";
-  let expected_response = b"home";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_get() {
-  boot_regular();
-  let request = b"GET /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"get";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_persistent_connection_handles_multiple_requests() {
-  boot_regular();
-  let mut stream = TcpStream::connect(REGULAR_SERVER_URL).expect("connect to test server");
-  stream
-    .write_all(
-      b"GET /test HTTP/1.1\r\n\r\nGET /test HTTP/1.1\r\nConnection: close\r\n\r\n",
-    )
-    .expect("write requests");
-
-  let mut response = String::new();
-  stream.read_to_string(&mut response).expect("read responses");
-
-  assert_eq!(response.matches("HTTP/1.1 200 OK").count(), 2, "{response}");
-  assert_eq!(response.matches("\r\n\r\nget").count(), 2, "{response}");
-}
-
-#[test]
-fn test_chunked_request_body() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
-  let expected_response = b"Body: \"Wikipedia\"";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_get_with_query() {
-  boot_regular();
-  let request = b"GET /test?foo=bar&baz=qux HTTP/1.1\r\n\r\n";
-  let expected_response = b"get";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_get_no_content_length() {
-  boot_regular();
-  let request = b"GET /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"get";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_get_with_content_length_matching_body() {
-  boot_regular();
-  let request = b"GET /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
-  let expected_response = b"get";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_get_with_content_length_smaller_than_body() {
-  boot_regular();
-  let request = b"GET /test HTTP/1.1\r\nContent-Length: 1\r\n\r\npong";
-  let expected_response = b"get";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_get_with_content_length_larger_than_body() {
-  boot_regular();
-  let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_post() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response);
-}
-
-#[test]
-fn test_post_without_content_length_client_keeps_socket_open() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\n\r\npayload-open";
-  let mut stream = TcpStream::connect(REGULAR_SERVER_URL).expect("connect to test server");
-  stream.write_all(request).expect("write request");
-  stream
-    .set_read_timeout(Some(Duration::from_millis(500)))
-    .expect("set read timeout");
-  let mut buf = Vec::new();
-  let mut chunk = [0u8; 1024];
-  loop {
-    match stream.read(&mut chunk) {
-      Ok(0) => break,
-      Ok(n) => buf.extend_from_slice(&chunk[..n]),
-      Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => break,
-      Err(e) => panic!("read error: {:?}", e),
-    }
+test_case! {
+  #[test]
+  test test_home {
+    boot_regular();
+    let request = b"GET / HTTP/1.1\r\n\r\n";
+    let expected_response = b"home";
+    run_regular(request, expected_response);
   }
-  let text = String::from_utf8_lossy(&buf);
-  assert!(
-    text.contains("HTTP/1.1 200 OK") && text.contains("Body: \"payload-open\""),
-    "response not received or missing body, got: {}",
-    text
-  );
-}
 
-#[test]
-fn test_post_without_content_length_empty_body() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_get {
+    boot_regular();
+    let request = b"GET /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"get";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_post_with_query() {
-  boot_regular();
-  let request = b"POST /test?foo=bar HTTP/1.1\r\n\r\nmueve tu cuerpo";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {\"foo\": \"bar\"}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_persistent_connection_handles_multiple_requests {
+    boot_regular();
+    let mut stream = TcpStream::connect(REGULAR_SERVER_URL).expect("connect to test server");
+    stream
+      .write_all(
+        b"GET /test HTTP/1.1\r\n\r\nGET /test HTTP/1.1\r\nConnection: close\r\n\r\n",
+      )
+      .expect("write requests");
 
-#[test]
-fn test_post_with_content_length() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\nContent-Length: 15\r\n\r\nmueve tu cuerpo";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response);
-}
+    let mut response = String::new();
+    stream.read_to_string(&mut response).expect("read responses");
 
-#[test]
-fn test_post_with_params() {
-  boot_regular();
-  let request = b"POST /test/hola/que?param4=hoy&param3=hace HTTP/1.1\r\n\r\nmueve tu cuerpo";
-  let expected_response =
-    b"Method: POST\nUri: /test/hola/que\nParams: {\"param1\": \"hola\", \"param2\": \"que\", \"param3\": \"hace\", \"param4\": \"hoy\"}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response);
-}
+    assert_eq!(response.matches("HTTP/1.1 200 OK").count(), 2, "{response}");
+    assert_eq!(response.matches("\r\n\r\nget").count(), 2, "{response}");
+  }
 
-#[test]
-fn test_post_with_incomplete_path_params() {
-  boot_regular();
-  let request = b"POST /test/hola HTTP/1.1\r\n\r\nmueve tu cuerpo";
-  let expected_response = b"Method: POST\nUri: /test/hola\nParams: {\"param1\": \"hola\"}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_chunked_request_body {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
+    let expected_response = b"Body: \"Wikipedia\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_post_without_content_length_body() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\n\r\nbody";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_get_with_query {
+    boot_regular();
+    let request = b"GET /test?foo=bar&baz=qux HTTP/1.1\r\n\r\n";
+    let expected_response = b"get";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_post_with_matching_content_length() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nbody";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_get_no_content_length {
+    boot_regular();
+    let request = b"GET /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"get";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_post_with_smaller_content_length() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\nContent-Length: 2\r\n\r\nbody";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"bo\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_get_with_content_length_matching_body {
+    boot_regular();
+    let request = b"GET /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
+    let expected_response = b"get";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_post_with_larger_content_length() {
-  boot_regular();
-  let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_get_with_content_length_smaller_than_body {
+    boot_regular();
+    let request = b"GET /test HTTP/1.1\r\nContent-Length: 1\r\n\r\npong";
+    let expected_response = b"get";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_put() {
-  boot_regular();
-  let request = b"PUT /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
-  let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_get_with_content_length_larger_than_body {
+    boot_regular();
+    let request = b"GET /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nhi";
+    let expected_response = b"HTTP/1.1 400 Bad Request";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_put_without_content_length() {
-  boot_regular();
-  let request = b"PUT /test HTTP/1.1\r\n\r\nput";
-  let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_put_with_matching_content_length() {
-  boot_regular();
-  let request = b"PUT /test HTTP/1.1\r\nContent-Length: 3\r\n\r\nput";
-  let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_without_content_length_client_keeps_socket_open {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\n\r\npayload-open";
+    let mut stream = TcpStream::connect(REGULAR_SERVER_URL).expect("connect to test server");
+    stream.write_all(request).expect("write request");
+    stream
+      .set_read_timeout(Some(Duration::from_millis(500)))
+      .expect("set read timeout");
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 1024];
+    loop {
+      match stream.read(&mut chunk) {
+        Ok(0) => break,
+        Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => break,
+        Err(e) => panic!("read error: {:?}", e),
+      }
+    }
+    let text = String::from_utf8_lossy(&buf);
+    assert!(
+      text.contains("HTTP/1.1 200 OK") && text.contains("Body: \"payload-open\""),
+      "response not received or missing body, got: {}",
+      text
+    );
+  }
 
-#[test]
-fn test_put_with_smaller_content_length() {
-  boot_regular();
-  let request = b"PUT /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nput";
-  let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"p\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_without_content_length_empty_body {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_put_with_larger_content_length() {
-  boot_regular();
-  let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_with_query {
+    boot_regular();
+    let request = b"POST /test?foo=bar HTTP/1.1\r\n\r\nmueve tu cuerpo";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {\"foo\": \"bar\"}\nBody: \"mueve tu cuerpo\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_patch() {
-  boot_regular();
-  let request = b"PATCH /test HTTP/1.1\r\n\r\npatch";
-  let expected_response = b"Method: PATCH\nUri: /test\nParams: {}\nBody: \"patch\"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_with_content_length {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\nContent-Length: 15\r\n\r\nmueve tu cuerpo";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_head() {
-  boot_regular();
-  let request = b"HEAD /test HTTP/1.1\r\n\r\n";
-  let response = run_regular(request, b"HTTP/1.1 200 OK");
-  assert!(!response.ends_with("\r\n\r\nhead"), "{response}");
-}
+  #[test]
+  test test_post_with_params {
+    boot_regular();
+    let request = b"POST /test/hola/que?param4=hoy&param3=hace HTTP/1.1\r\n\r\nmueve tu cuerpo";
+    let expected_response =
+      b"Method: POST\nUri: /test/hola/que\nParams: {\"param1\": \"hola\", \"param2\": \"que\", \"param3\": \"hace\", \"param4\": \"hoy\"}\nBody: \"mueve tu cuerpo\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_options() {
-  boot_regular();
-  let request = b"OPTIONS /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"options";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_with_incomplete_path_params {
+    boot_regular();
+    let request = b"POST /test/hola HTTP/1.1\r\n\r\nmueve tu cuerpo";
+    let expected_response = b"Method: POST\nUri: /test/hola\nParams: {\"param1\": \"hola\"}\nBody: \"mueve tu cuerpo\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_connect() {
-  boot_regular();
-  let request = b"CONNECT /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"connect";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_without_content_length_body {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\n\r\nbody";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_trace() {
-  boot_regular();
-  let request = b"TRACE /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"trace";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_with_matching_content_length {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nbody";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"body\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_query_with_body() {
-  boot_regular();
-  let request = b"QUERY /query HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
-  let expected_response = b"query:hello";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_with_smaller_content_length {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\nContent-Length: 2\r\n\r\nbody";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"bo\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_query_without_content_length() {
-  boot_regular();
-  let request = b"QUERY /query HTTP/1.1\r\n\r\nhello";
-  let expected_response = b"query:hello";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_post_with_larger_content_length {
+    boot_regular();
+    let request = b"POST /test HTTP/1.1\r\nContent-Length: 10\r\n\r\nbody";
+    let expected_response = b"HTTP/1.1 400 Bad Request";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_delete() {
-  boot_regular();
-  let request = b"DELETE /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"delete";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_put {
+    boot_regular();
+    let request = b"PUT /test HTTP/1.1\r\n\r\nmueve tu cuerpo";
+    let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"mueve tu cuerpo\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_delete_no_content_length() {
-  boot_regular();
-  let request = b"DELETE /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"delete";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_put_without_content_length {
+    boot_regular();
+    let request = b"PUT /test HTTP/1.1\r\n\r\nput";
+    let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_delete_with_content_length_matching_body() {
-  boot_regular();
-  let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
-  let expected_response = b"delete";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_put_with_matching_content_length {
+    boot_regular();
+    let request = b"PUT /test HTTP/1.1\r\nContent-Length: 3\r\n\r\nput";
+    let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"put\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_delete_with_content_length_smaller_than_body() {
-  boot_regular();
-  let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nping";
-  let expected_response = b"delete";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_put_with_smaller_content_length {
+    boot_regular();
+    let request = b"PUT /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nput";
+    let expected_response = b"Method: PUT\nUri: /test\nParams: {}\nBody: \"p\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_delete_with_content_length_larger_than_body() {
-  boot_regular();
-  let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_put_with_larger_content_length {
+    boot_regular();
+    let request = b"PUT /test HTTP/1.1\r\nContent-Length: 8\r\n\r\nput";
+    let expected_response = b"HTTP/1.1 400 Bad Request";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_strict_mode_without_content_length() {
-  boot_strict();
-  let request = b"POST /test HTTP/1.1\r\n\r\npayload";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
-  run_strict(request, expected_response);
-}
+  #[test]
+  test test_patch {
+    boot_regular();
+    let request = b"PATCH /test HTTP/1.1\r\n\r\npatch";
+    let expected_response = b"Method: PATCH\nUri: /test\nParams: {}\nBody: \"patch\"";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_strict_mode_with_content_length() {
-  boot_strict();
-  let request = b"POST /test HTTP/1.1\r\nContent-Length: 7\r\n\r\npayload";
-  let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
-  run_strict(request, expected_response);
-}
+  #[test]
+  test test_head {
+    boot_regular();
+    let request = b"HEAD /test HTTP/1.1\r\n\r\n";
+    let response = run_regular(request, b"HTTP/1.1 200 OK");
+    assert!(!response.ends_with("\r\n\r\nhead"), "{response}");
+  }
 
-#[test]
-fn test_strict_mode_get_without_content_length() {
-  boot_strict();
-  let request = b"GET /test HTTP/1.1\r\n\r\n";
-  let expected_response = b"get";
-  run_strict(request, expected_response);
-}
+  #[test]
+  test test_options {
+    boot_regular();
+    let request = b"OPTIONS /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"options";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_file_exists() {
-  boot_regular();
-  let request = b"GET /numano.png HTTP/1.1\r\nHost: localhost\r\n\r\n";
-  let expected_response = b"HTTP/1.1 200 OK";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_connect {
+    boot_regular();
+    let request = b"CONNECT /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"connect";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_file_not_found() {
-  boot_regular();
-  let request = b"GET /test.png HTTP/1.1\r\n\r\n";
-  let expected_response = b"HTTP/1.1 404 Not Found";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_trace {
+    boot_regular();
+    let request = b"TRACE /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"trace";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_method_not_allowed() {
-  boot_regular();
-  let request = b"BREW /coffee HTTP/1.1\r\n\r\n";
-  let expected_response = b"HTTP/1.1 405 Method Not Allowed";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_query_with_body {
+    boot_regular();
+    let request = b"QUERY /query HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
+    let expected_response = b"query:hello";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_allowed_method_missing_route() {
-  boot_regular();
-  let request = b"TRACE /missing HTTP/1.1\r\n\r\n";
-  let expected_response = b"HTTP/1.1 404 Not Found";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_query_without_content_length {
+    boot_regular();
+    let request = b"QUERY /query HTTP/1.1\r\n\r\nhello";
+    let expected_response = b"query:hello";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_empty_request() {
-  boot_regular();
-  let request = b"";
-  let expected_response = b"";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_delete {
+    boot_regular();
+    let request = b"DELETE /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"delete";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_malformed_request() {
-  boot_regular();
-  let request = b"THIS_IS_NOT_HTTP\r\n\r\n";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_delete_no_content_length {
+    boot_regular();
+    let request = b"DELETE /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"delete";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_unsupported_http_version() {
-  boot_regular();
-  let request = b"GET / HTTP/0.9\r\n\r\n";
-  let expected_response = b"HTTP/1.1 505 HTTP Version Not Supported";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_delete_with_content_length_matching_body {
+    boot_regular();
+    let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 4\r\n\r\nping";
+    let expected_response = b"delete";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_long_path() {
-  boot_regular();
-  let long_path = "/".to_string() + &"a".repeat(10_000);
-  let request = format!("GET {} HTTP/1.1\r\n\r\n", long_path);
-  let expected_response = b"HTTP/1.1 414 URI Too Long";
-  run_regular(request.as_bytes(), expected_response);
-}
+  #[test]
+  test test_delete_with_content_length_smaller_than_body {
+    boot_regular();
+    let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 1\r\n\r\nping";
+    let expected_response = b"delete";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_missing_method() {
-  boot_regular();
-  let request = b"/ HTTP/1.1\r\n\r\n";
-  let expected_response = b"HTTP/1.1 400 Bad Request";
-  run_regular(request, expected_response);
-}
+  #[test]
+  test test_delete_with_content_length_larger_than_body {
+    boot_regular();
+    let request = b"DELETE /test HTTP/1.1\r\nContent-Length: 20\r\n\r\nping";
+    let expected_response = b"HTTP/1.1 400 Bad Request";
+    run_regular(request, expected_response);
+  }
 
-#[test]
-fn test_redirect_with_location_header() -> TestResult {
-  boot_regular();
-  let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect");
-  assert!(
-    response.contains("Location: https://example.com"),
-    "missing Location header: {}",
-    response
-  );
-  assert!(
-    response.contains("Content-Length: 0"),
-    "wrong Content-Length for redirect: {}",
-    response
-  );
-  Ok(())
-}
+  #[test]
+  test test_strict_mode_without_content_length {
+    boot_strict();
+    let request = b"POST /test HTTP/1.1\r\n\r\npayload";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
+    run_strict(request, expected_response);
+  }
 
-#[test]
-fn test_json_content_type_header() -> TestResult {
-  boot_regular();
-  let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#);
-  assert!(
-    response.contains("Content-Type: application/json"),
-    "missing JSON content type: {}",
-    response
-  );
-  assert!(
-    response.contains("Content-Length: 11"),
-    "wrong Content-Length for JSON: {}",
-    response
-  );
-  Ok(())
-}
+  #[test]
+  test test_strict_mode_with_content_length {
+    boot_strict();
+    let request = b"POST /test HTTP/1.1\r\nContent-Length: 7\r\n\r\npayload";
+    let expected_response = b"Method: POST\nUri: /test\nParams: {}\nBody: \"payload\"";
+    run_strict(request, expected_response);
+  }
 
-#[test]
-fn test_custom_header_is_serialized() -> TestResult {
-  boot_regular();
-  let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom");
-  assert!(
-    response.contains("X-Trace-Id: abc-123"),
-    "missing custom header: {}",
-    response
-  );
-  assert!(
-    response.contains("Content-Type: text/plain"),
-    "missing Content-Type: {}",
-    response
-  );
-  Ok(())
+  #[test]
+  test test_strict_mode_get_without_content_length {
+    boot_strict();
+    let request = b"GET /test HTTP/1.1\r\n\r\n";
+    let expected_response = b"get";
+    run_strict(request, expected_response);
+  }
+
+  #[test]
+  test test_file_exists {
+    boot_regular();
+    let request = b"GET /numano.png HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let expected_response = b"HTTP/1.1 200 OK";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_file_not_found {
+    boot_regular();
+    let request = b"GET /test.png HTTP/1.1\r\n\r\n";
+    let expected_response = b"HTTP/1.1 404 Not Found";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_method_not_allowed {
+    boot_regular();
+    let request = b"BREW /coffee HTTP/1.1\r\n\r\n";
+    let expected_response = b"HTTP/1.1 405 Method Not Allowed";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_allowed_method_missing_route {
+    boot_regular();
+    let request = b"TRACE /missing HTTP/1.1\r\n\r\n";
+    let expected_response = b"HTTP/1.1 404 Not Found";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_empty_request {
+    boot_regular();
+    let request = b"";
+    let expected_response = b"";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_malformed_request {
+    boot_regular();
+    let request = b"THIS_IS_NOT_HTTP\r\n\r\n";
+    let expected_response = b"HTTP/1.1 400 Bad Request";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_unsupported_http_version {
+    boot_regular();
+    let request = b"GET / HTTP/0.9\r\n\r\n";
+    let expected_response = b"HTTP/1.1 505 HTTP Version Not Supported";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_long_path {
+    boot_regular();
+    let long_path = "/".to_string() + &"a".repeat(10_000);
+    let request = format!("GET {} HTTP/1.1\r\n\r\n", long_path);
+    let expected_response = b"HTTP/1.1 414 URI Too Long";
+    run_regular(request.as_bytes(), expected_response);
+  }
+
+  #[test]
+  test test_missing_method {
+    boot_regular();
+    let request = b"/ HTTP/1.1\r\n\r\n";
+    let expected_response = b"HTTP/1.1 400 Bad Request";
+    run_regular(request, expected_response);
+  }
+
+  #[test]
+  test test_redirect_with_location_header {
+    boot_regular();
+    let response = run_regular(b"GET /redirect HTTP/1.1\r\n\r\n", b"HTTP/1.1 307 Temporary Redirect");
+    assert!(
+      response.contains("Location: https://example.com"),
+      "missing Location header: {}",
+      response
+    );
+    assert!(
+      response.contains("Content-Length: 0"),
+      "wrong Content-Length for redirect: {}",
+      response
+    );
+  }
+
+  #[test]
+  test test_json_content_type_header {
+    boot_regular();
+    let response = run_regular(b"GET /json HTTP/1.1\r\n\r\n", br#"{"ok":true}"#);
+    assert!(
+      response.contains("Content-Type: application/json"),
+      "missing JSON content type: {}",
+      response
+    );
+    assert!(
+      response.contains("Content-Length: 11"),
+      "wrong Content-Length for JSON: {}",
+      response
+    );
+  }
+
+  #[test]
+  test test_custom_header_is_serialized {
+    boot_regular();
+    let response = run_regular(b"GET /custom-header HTTP/1.1\r\n\r\n", b"custom");
+    assert!(
+      response.contains("X-Trace-Id: abc-123"),
+      "missing custom header: {}",
+      response
+    );
+    assert!(
+      response.contains("Content-Type: text/plain"),
+      "missing Content-Type: {}",
+      response
+    );
+  }
+
 }
