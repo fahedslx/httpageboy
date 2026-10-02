@@ -115,6 +115,10 @@ Test helpers live in `httpageboy::test_utils` and work the same for sync and asy
 
 Optional reporting lives in `httpageboy::test_report`. It does not change `run_test()`: it records each evaluated case, keeps the original Rust/Pageboy error untouched, and derives compact summaries from the individual results.
 
+Pageboy reuses QAta for generic test result primitives and lifecycle result merging while keeping HTTP-specific test context in Pageboy. Consumers can continue depending on Pageboy only.
+
+For data-driven runners that need evidence from existing tests without rewriting them, set `HTTPAGEBOY_TRACE=1`. Every completed `run_test()` comparison then emits one normal Pageboy evaluation. `HTTPAGEBOY_TEST_ID` can provide the external case/implementation identifier.
+
 ```rust
 use httpageboy::test_report::{TestReportContext, TestReporter};
 use httpageboy::test_utils::run_test;
