@@ -9,11 +9,13 @@ stages:
 
 test:
   stage: test
+  interruptible: true
   script:
     - sh cicd/test.sh
 
 release-check:
   stage: release-check
+  interruptible: true
   script:
     - sh cicd/publish.sh --dry-run
   rules:
