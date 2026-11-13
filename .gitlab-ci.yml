@@ -1,4 +1,9 @@
 default:
+  after_script:
+    - |
+      for dir in target/debug/deps target/debug/incremental target/debug/build target/debug/.fingerprint target/release/deps target/release/incremental target/release/build target/release/.fingerprint; do
+        if [ -d "$dir" ]; then rm -rf -- "$dir" 2>/dev/null || true; fi
+      done
   tags:
     - eqeqo-vps1
 
